@@ -11,6 +11,14 @@ npx zomb path/to/repo --out report.html
 
 One command writes a single HTML report. Your code never leaves your machine.
 
+What you get:
+
+- **Read these first:** the zombie files that can hurt you most, ranked by how many files depend on them, what they touch (payments, auth, database, secrets, shell, public endpoints) and how often they needed fixes lately. The list fits in about an hour of reading.
+- **The map:** every file placed in one of four boxes (below).
+- **Who writes your new code:** the share of new lines each month that agents wrote.
+- **Copy-paste:** blocks of code that appear twice, and helpers defined in more than one file, with who wrote each copy.
+- **Review speed:** PRs approved faster than anyone can read them (for example, 1,240 lines approved 30 minutes after the last commit, with no comments).
+
 |                    | **Unused**         | **Used**        |
 | ------------------ | ------------------ | --------------- |
 | **Understood**     | Safe to delete     | Healthy         |

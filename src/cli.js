@@ -5,7 +5,8 @@ import { writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { parseArgs, promisify } from 'node:util';
-import { isAgent, parseBlame, classifyPR, scoreFile, rollup } from './score.js';
+import { isAgent, parseBlame, classifyPR, scoreFile, rollup, churn, timeline, readingPlan, sameNames } from './score.js';
+import { parseAll, dependents, touches, clones } from './signals.js';
 import { renderReport } from './report.js';
 
 const { values: opts, positionals } = parseArgs({
@@ -33,17 +34,21 @@ async function knip() {
   }
 }
 
-// sha -> agent name (or null when a human wrote it)
+// One pass over history -> agentOf: sha -> agent name (null = human), history: [{ sha, date, subject, files:[{ path, added }] }]
 async function commits() {
-  const out = await sh('git', ['log', '--format=%H%x00%an <%ae>%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)%x1e'], root);
-  const map = new Map();
+  const out = await sh('git', ['log', '--numstat', '--no-renames', '--format=%x1e%H%x00%aI%x00%s%x00%an <%ae>%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)'], root);
+  const agentOf = new Map();
+  const history = [];
   for (const rec of out.split('\x1e')) {
-    const [sha, author, trailers = ''] = rec.trim().split('\0');
+    const [head, ...stat] = rec.split('\n');
+    const [sha, date, subject, author, trailers = ''] = head.split('\0');
     if (!sha) continue;
     const agent = [author, ...trailers.split('\x1f')].map((p) => p.trim()).find((p) => p && isAgent(p));
-    map.set(sha, agent ? agent.replace(/\s*(\(.*\))?\s*<.*$/, '') : null);
+    agentOf.set(sha, agent ? agent.replace(/\s*(\(.*\))?\s*<.*$/, '') : null);
+    const files = stat.map((l) => l.split('\t')).filter(([a, , p]) => p && CODE.test(p) && a !== '-').map(([a, , p]) => ({ path: p, added: Number(a) }));
+    history.push({ sha, date, subject, files });
   }
-  return map;
+  return { agentOf, history };
 }
 
 // ponytail: one blame process per file, 8 at a time; incremental blame cache if big repos get slow
@@ -53,22 +58,16 @@ async function blameAll(files, agentOf) {
   const worker = async () => {
     while (next < files.length) {
       const file = files[next++];
-      const counts = parseBlame(await sh('git', ['blame', '--porcelain', '-w', '-M', '--', file], root).catch(() => ''));
-      let lines = 0, agentLines = 0;
-      const agents = new Set();
-      for (const [sha, n] of counts) {
-        lines += n;
-        const agent = agentOf.get(sha);
-        if (agent) agentLines += n, agents.add(agent);
-      }
-      result.set(file, { lines, agentLines, agents });
+      const shas = parseBlame(await sh('git', ['blame', '--porcelain', '-w', '-M', '--', file], root).catch(() => ''));
+      const agents = new Set(shas.map((s) => agentOf.get(s)).filter(Boolean));
+      result.set(file, { lines: shas.length, agentLines: shas.filter((s) => agentOf.get(s)).length, agents, shas });
     }
   };
   await Promise.all(Array.from({ length: 8 }, worker));
   return result;
 }
 
-// path -> { number, state } for the latest merged PR that touched it.
+// path -> { number, state, lines, seconds } for the latest merged PR that touched it.
 // ponytail: last 100 merged PRs (4 pages of 25); add octokit throttling before backfilling a year
 async function reviews() {
   if (opts['no-github']) return new Map();
@@ -81,7 +80,7 @@ async function reviews() {
   }
   // 25 PRs a page: 100 PRs x 100 files in one query times out on GitHub's side
   const query = `query($o:String!,$n:String!,$after:String){repository(owner:$o,name:$n){pullRequests(states:MERGED,first:25,after:$after,orderBy:{field:UPDATED_AT,direction:DESC}){
-    pageInfo{hasNextPage endCursor} nodes{number mergedAt author{login} commits(last:1){nodes{commit{committedDate}}} reviewThreads{totalCount}
+    pageInfo{hasNextPage endCursor} nodes{number mergedAt additions deletions author{login} commits(last:1){nodes{commit{committedDate}}} reviewThreads{totalCount}
     reviews(first:20){nodes{state submittedAt body author{login __typename}}} files(first:100){nodes{path}}}}}}`;
   const prs = [];
   let after = null;
@@ -105,13 +104,15 @@ async function reviews() {
   const byPath = new Map();
   prs.sort((a, b) => Date.parse(a.mergedAt) - Date.parse(b.mergedAt));
   for (const pr of prs) {
-    const state = classifyPR({
+    const review = classifyPR({
       author: pr.author?.login,
+      additions: pr.additions,
+      deletions: pr.deletions,
       lastCommitAt: pr.commits.nodes[0]?.commit.committedDate,
       threads: pr.reviewThreads.totalCount,
       reviews: pr.reviews.nodes.map((r) => ({ state: r.state, at: r.submittedAt, body: r.body || '', author: r.author?.login, bot: r.author?.__typename === 'Bot' })),
     });
-    for (const f of pr.files.nodes) byPath.set(f.path, { number: pr.number, state }); // later PRs overwrite earlier ones
+    for (const f of pr.files.nodes) byPath.set(f.path, { number: pr.number, ...review }); // later PRs overwrite earlier ones
   }
   return byPath;
 }
@@ -130,9 +131,12 @@ if (!files.length) {
 }
 log(`scanning ${files.length} JS/TS files in ${root}`);
 
-const [knipOut, agentOf, prOf] = await Promise.all([knip(), commits(), reviews()]);
+const [knipOut, { agentOf, history }, prOf, parsed, copies] = await Promise.all([knip(), commits(), reviews(), parseAll(root, files), clones(root, files)]);
 const blame = await blameAll(files, agentOf);
 const knipOf = new Map(knipOut.issues.map((i) => [i.file, i]));
+const dependentsOf = dependents(parsed);
+const touchesOf = touches(parsed);
+const churnOf = churn(history);
 // Tools load dot-folders (.claude/, .github/) and *.config.* files by convention, so never call them unused.
 const conventional = (f) => /(^|\/)\.[^/]+\/|\.config\.[cm]?[jt]s$/.test(f);
 const unused = files.filter((f) => knipOf.get(f)?.files?.length && !conventional(f));
@@ -148,17 +152,34 @@ const scored = files
       unusedExports: (k?.exports?.length || 0) + (k?.types?.length || 0),
       referencedBy: refs.get(file) || null,
       pr: prOf.get(file) || null,
+      dependents: dependentsOf.get(file) || 0,
+      touches: touchesOf.get(file) || [],
+      churn: churnOf.get(file),
     });
   })
   .filter((f) => f.lines);
 
+// Who wrote each side of a copy-pasted block, from the blame lines in its range.
+const byWhom = ({ file, start, end }) => {
+  const shas = blame.get(file)?.shas.slice(start - 1, end) || [];
+  const agents = [...new Set(shas.map((s) => agentOf.get(s)).filter(Boolean))];
+  return shas.length && agents.length && shas.filter((s) => agentOf.get(s)).length / shas.length >= 0.5 ? agents.join(', ') : 'a human';
+};
+const dupes = copies && copies.sort((x, y) => y.lines - x.lines).map((c) => ({ ...c, a: { ...c.a, by: byWhom(c.a) }, b: { ...c.b, by: byWhom(c.b) } }));
+
 const commit = (await sh('git', ['rev-parse', '--short', 'HEAD'], root)).trim();
+const plan = readingPlan(scored);
+const months = timeline(history, agentOf);
 const report = renderReport({
   repo: path.basename(root),
   commit,
   date: new Date().toLocaleDateString('en-CA'),
   files: scored,
   folders: rollup(scored),
+  plan,
+  months,
+  dupes,
+  names: sameNames(parsed),
   hasAgents: [...agentOf.values()].some(Boolean),
   hasReviews: prOf.size > 0,
   usedError: knipOut.error,
@@ -168,6 +189,14 @@ await writeFile(out, report);
 
 const count = (q) => scored.filter((f) => f.quadrant === q).length;
 const used = scored.filter((f) => f.used).length;
+const pct = (n, d) => (d ? Math.round((n / d) * 100) : 0);
 console.log(`${scored.length} files · ${count('delete-first')} delete first · ${count('danger')} zombie code · ${count('safe-delete')} safe to delete · ${count('healthy')} healthy`);
-console.log(`${knipOut.error ? 'unused: skipped' : `${Math.round(((scored.length - used) / scored.length) * 100)}% unused`} · ${used ? Math.round((count('danger') / used) * 100) : 0}% zombie code (live, nobody has read it)`);
-console.log(`report: ${out}`);
+console.log(`${knipOut.error ? 'unused: skipped' : `${pct(scored.length - used, scored.length)}% unused`} · ${pct(count('danger'), used)}% zombie code (live, nobody has read it)`);
+if (plan.files.length) {
+  console.log(`\nRead ${plan.files.length > 1 ? `these ${plan.files.length} files` : 'this file'} first (~${plan.minutes} min, ${Math.round(plan.coverage * 100)}% of zombie risk):`);
+  for (const f of plan.files.slice(0, 5)) console.log(`  ${f.path}  ${[f.dependents && `${f.dependents} file${f.dependents > 1 ? 's' : ''} depend on it`, f.touches.length && `touches ${f.touches.join(', ')}`, f.churn?.changes && `${f.churn.changes} change${f.churn.changes > 1 ? 's' : ''} in 90 days`].filter(Boolean).join(' · ')}`);
+}
+const recent = months.slice(-6);
+if (recent.some((m) => m.agent)) console.log(`\nAgent share of new code: ${recent.map((m) => `${m.month.slice(2)} ${pct(m.agent, m.agent + m.human)}%`).join(' → ')}`);
+if (dupes?.length) console.log(`Copy-paste: ${dupes.length} duplicated blocks, ${dupes.reduce((n, d) => n + d.lines, 0)} lines`);
+console.log(`\nreport: ${out}`);
