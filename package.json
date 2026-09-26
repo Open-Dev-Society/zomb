@@ -1,0 +1,22 @@
+{
+  "name": "zomb",
+  "version": "0.0.1",
+  "description": "Find the zombie code in your repo: code nobody uses and nobody understands.",
+  "type": "module",
+  "bin": {
+    "zomb": "src/cli.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "knip": "^6.38.0"
+  }
+}
