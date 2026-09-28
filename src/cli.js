@@ -5,8 +5,8 @@ import { writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { parseArgs, promisify } from 'node:util';
-import { isAgent, parseBlame, classifyPR, scoreFile, rollup, churn, timeline, readingPlan, sameNames } from './score.js';
-import { parseAll, dependents, touches, clones } from './signals.js';
+import { isAgent, parseBlame, classifyPR, scoreFile, rollup, churn, timeline, readingPlan, sameNames, testsOnly, isZombie } from './score.js';
+import { parseAll, dependents, touches, clones, orphanRoutes } from './signals.js';
 import { renderReport } from './report.js';
 
 const { values: opts, positionals } = parseArgs({
@@ -17,8 +17,11 @@ const exec = promisify(execFile);
 const sh = (cmd, args, cwd) => exec(cmd, args, { cwd, maxBuffer: 512 * 1024 * 1024 }).then((r) => r.stdout);
 const CODE = /\.[cm]?[jt]sx?$/;
 
-const root = (await sh('git', ['rev-parse', '--show-toplevel'], path.resolve(positionals[0] || '.'))).trim();
 const log = (msg) => process.stderr.write(`zomb: ${msg}\n`);
+const target = path.resolve(positionals[0] || '.');
+const fail = (msg) => (log(msg), process.exit(1));
+if (!existsSync(target)) fail(`${target} does not exist`);
+const root = (await sh('git', ['rev-parse', '--show-toplevel'], target).catch(() => fail(`${target} is not inside a git repo`))).trim();
 
 async function knip() {
   const bin = path.join(path.dirname(createRequire(import.meta.url).resolve('knip')), '..', 'bin', 'knip.js');
@@ -131,7 +134,7 @@ if (!files.length) {
 }
 log(`scanning ${files.length} JS/TS files in ${root}`);
 
-const [knipOut, { agentOf, history }, prOf, parsed, copies] = await Promise.all([knip(), commits(), reviews(), parseAll(root, files), clones(root, files)]);
+const [knipOut, { agentOf, history }, prOf, parsed, copies, orphans] = await Promise.all([knip(), commits(), reviews(), parseAll(root, files), clones(root, files), orphanRoutes(root, files)]);
 const blame = await blameAll(files, agentOf);
 const knipOf = new Map(knipOut.issues.map((i) => [i.file, i]));
 const dependentsOf = dependents(parsed);
@@ -139,8 +142,19 @@ const touchesOf = touches(parsed);
 const churnOf = churn(history);
 // Tools load dot-folders (.claude/, .github/) and *.config.* files by convention, so never call them unused.
 const conventional = (f) => /(^|\/)\.[^/]+\/|\.config\.[cm]?[jt]s$/.test(f);
-const unused = files.filter((f) => knipOf.get(f)?.files?.length && !conventional(f));
-const refs = new Map(await Promise.all(unused.map(async (f) => [f, await referencedBy(f)])));
+const unused = new Set(files.filter((f) => knipOf.get(f)?.files?.length && !conventional(f)));
+const refs = new Map(await Promise.all([...unused].map(async (f) => [f, await referencedBy(f)])));
+// A file started by path (action.yml runs run.ts) is live, and so is everything it imports: settle that before calling anything test-only.
+const live = new Set();
+let onlyTests;
+for (;;) {
+  onlyTests = new Set([...testsOnly(parsed, live)].filter((f) => !unused.has(f) && !conventional(f)));
+  for (const f of onlyTests) if (!refs.has(f)) refs.set(f, await referencedBy(f));
+  const named = [...onlyTests].filter((f) => refs.get(f) && !live.has(f));
+  if (!named.length) break;
+  named.forEach((f) => live.add(f));
+}
+onlyTests = new Set([...onlyTests].filter((f) => !live.has(f)));
 
 const scored = files
   .map((file) => {
@@ -148,7 +162,9 @@ const scored = files
     return scoreFile({
       path: file,
       ...blame.get(file),
-      unusedFile: unused.includes(file),
+      unusedFile: unused.has(file),
+      testsOnly: onlyTests.has(file),
+      orphanRoute: orphans.get(file) || null,
       unusedExports: (k?.exports?.length || 0) + (k?.types?.length || 0),
       referencedBy: refs.get(file) || null,
       pr: prOf.get(file) || null,
@@ -188,12 +204,27 @@ const out = path.resolve(opts.out);
 await writeFile(out, report);
 
 const count = (q) => scored.filter((f) => f.quadrant === q).length;
-const used = scored.filter((f) => f.used).length;
 const pct = (n, d) => (d ? Math.round((n / d) * 100) : 0);
-console.log(`${scored.length} files · ${count('delete-first')} delete first · ${count('danger')} zombie code · ${count('safe-delete')} safe to delete · ${count('healthy')} healthy`);
-console.log(`${knipOut.error ? 'unused: skipped' : `${pct(scored.length - used, scored.length)}% unused`} · ${pct(count('danger'), used)}% zombie code (live, nobody has read it)`);
+const zombies = scored.filter(isZombie).sort((a, b) => b.lines - a.lines);
+const maybe = scored.filter((f) => f.orphanRoute && !isZombie(f));
+const used = scored.length - zombies.length;
+const n = (x) => x.toLocaleString('en-US');
+console.log(`${scored.length} files · ${zombies.length} zombie · ${count('unread')} unread · ${count('healthy')} healthy`);
+console.log(knipOut.error ? 'Zombie code: skipped (Knip failed)' : `Zombie code: ${zombies.length} files, ${n(zombies.reduce((s, f) => s + f.lines, 0))} lines not in use (${pct(zombies.length, scored.length)}% of files)${maybe.length ? ` · ${maybe.length} more route${maybe.length > 1 ? 's' : ''} nothing links to` : ''}`);
+console.log(`Unread code: ${pct(count('unread'), used)}% of live code nobody has read`);
+if (zombies.length) {
+  console.log(`\nZombie files, biggest first:`);
+  for (const f of zombies.slice(0, 5)) {
+    const share = f.lines ? Math.round((f.agentLines / f.lines) * 100) : 0;
+    console.log(`  ${f.path}  ${[`${n(f.lines)} lines`, f.unusedFile ? 'nothing imports it' : 'only tests import it', share && `${share}% by ${[...f.agents].join(', ')}`].filter(Boolean).join(' · ')}`);
+  }
+}
+if (maybe.length) {
+  console.log(`\nMaybe zombie (nothing in the repo links to these routes; check analytics):`);
+  for (const f of maybe.slice(0, 5)) console.log(`  ${f.orphanRoute}  ${f.path}`);
+}
 if (plan.files.length) {
-  console.log(`\nRead ${plan.files.length > 1 ? `these ${plan.files.length} files` : 'this file'} first (~${plan.minutes} min, ${Math.round(plan.coverage * 100)}% of zombie risk):`);
+  console.log(`\nRead ${plan.files.length > 1 ? `these ${plan.files.length} files` : 'this file'} first (~${plan.minutes} min, ${Math.round(plan.coverage * 100)}% of unread risk):`);
   for (const f of plan.files.slice(0, 5)) console.log(`  ${f.path}  ${[f.dependents && `${f.dependents} file${f.dependents > 1 ? 's' : ''} depend on it`, f.touches.length && `touches ${f.touches.join(', ')}`, f.churn?.changes && `${f.churn.changes} change${f.churn.changes > 1 ? 's' : ''} in 90 days`].filter(Boolean).join(' · ')}`);
 }
 const recent = months.slice(-6);

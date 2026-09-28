@@ -8,7 +8,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { parseSync } from 'oxc-parser';
 import { ResolverFactory } from 'oxc-resolver';
-import { surfacesOf } from './score.js';
+import { surfacesOf, routeOf } from './score.js';
 
 // -> Map(path -> { imports:[repo paths], surfaces:[tags], exported:[names] })
 // ponytail: root tsconfig paths only; per-workspace tsconfigs if monorepo aliases go unresolved
@@ -67,6 +67,26 @@ const CARRIES = new Set(['payments', 'auth', 'database', 'shell']);
 export function touches(parsed) {
   const out = new Map();
   for (const [file, p] of parsed) out.set(file, [...new Set([...p.surfaces, ...p.imports.flatMap((d) => parsed.get(d)?.surfaces.filter((t) => CARRIES.has(t)) || [])])]);
+  return out;
+}
+
+// Page/API routes that nothing in the repo links to or calls -> Map(path -> url).
+// ponytail: static search for the URL's fixed prefix; production traffic (cloud) is the real answer
+export async function orphanRoutes(root, files) {
+  const out = new Map();
+  // A repo with no pages besides a home page is an API for other apps: nothing inside it is supposed to call its routes.
+  const hasPages = files.some((f) => routeOf(f)?.kind === 'page');
+  await Promise.all(
+    files.map(async (file) => {
+      const route = routeOf(file);
+      if (!route || (route.kind === 'api' && !hasPages)) return;
+      const prefix = route.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // a quote, backtick, ( or } right before the path; /, ?, #, a quote or line end right after
+      const re = `["'\`(}]${prefix}([/?#"'\`]|$)`;
+      const hits = await promisify(execFile)('git', ['grep', '-l', '-E', '-e', re, '--', '.', `:!${file}`], { cwd: root }).then((r) => r.stdout, () => '');
+      if (!hits.trim()) out.set(file, route.url);
+    }),
+  );
   return out;
 }
 

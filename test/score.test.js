@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isAgent, parseBlame, classifyPR, scoreFile, surfacesOf, churn, timeline, readingPlan, sameNames } from '../src/score.js';
+import { isAgent, parseBlame, classifyPR, scoreFile, surfacesOf, churn, timeline, readingPlan, sameNames, testsOnly, routeOf } from '../src/score.js';
 
 test('isAgent spots agents, not humans who share a name', () => {
   assert.ok(isAgent('Claude Opus 5 <noreply@anthropic.com>'));
@@ -51,13 +51,14 @@ test('churn and timeline from git history', () => {
   assert.deepEqual(timeline(history, agentOf), [{ month: '2026-01', agent: 0, human: 50 }, { month: '2026-09', agent: 100, human: 0 }]);
 });
 
-test('scoreFile quadrants, and risk ranks what can break first', () => {
+test('scoreFile: zombie = not in use; risk ranks unread code by what it can break', () => {
   const f = { path: 'src/a.ts', lines: 100, agentLines: 0, agents: new Set(), unusedExports: 0, referencedBy: null, pr: null };
   assert.equal(scoreFile({ ...f, unusedFile: false }).quadrant, 'healthy');
-  assert.equal(scoreFile({ ...f, unusedFile: true }).quadrant, 'safe-delete');
-  assert.equal(scoreFile({ ...f, unusedFile: true, agentLines: 90 }).quadrant, 'delete-first');
-  assert.equal(scoreFile({ ...f, unusedFile: false, agentLines: 90 }).quadrant, 'danger');
-  assert.equal(scoreFile({ ...f, unusedFile: true, referencedBy: 'action.yml', agentLines: 90 }).quadrant, 'danger');
+  assert.equal(scoreFile({ ...f, unusedFile: true }).quadrant, 'zombie-known');
+  assert.equal(scoreFile({ ...f, unusedFile: true, agentLines: 90 }).quadrant, 'zombie');
+  assert.equal(scoreFile({ ...f, unusedFile: false, testsOnly: true, agentLines: 90 }).quadrant, 'zombie');
+  assert.equal(scoreFile({ ...f, unusedFile: false, agentLines: 90 }).quadrant, 'unread');
+  assert.equal(scoreFile({ ...f, unusedFile: true, referencedBy: 'action.yml', agentLines: 90 }).quadrant, 'unread');
   // 80% agent lines, real review -> 20% + 40% read = understood
   assert.equal(scoreFile({ ...f, unusedFile: false, agentLines: 80, pr: { number: 1, state: 'reviewed', lines: 10, seconds: 600 } }).quadrant, 'healthy');
 
@@ -79,4 +80,30 @@ test('sameNames finds helpers defined twice, not framework conventions', () => {
     ['c/route.ts', { exported: ['GET', 'POST'] }],
   ]);
   assert.deepEqual(sameNames(parsed), [{ name: 'formatCurrency', files: ['a/format.ts', 'b/money.ts'] }]);
+});
+
+test('testsOnly: files kept alive only by their tests, even through a chain', () => {
+  const parsed = new Map([
+    ['src/app/page.tsx', { imports: ['src/lib/live.ts'] }],
+    ['src/lib/live.ts', { imports: [] }],
+    ['src/lib/old.ts', { imports: ['src/lib/helper.ts'] }],
+    ['src/lib/helper.ts', { imports: [] }],
+    ['src/lib/old.test.ts', { imports: ['src/lib/old.ts', 'src/lib/live.ts'] }],
+    ['src/lib/lonely.ts', { imports: [] }],
+  ]);
+  assert.deepEqual([...testsOnly(parsed)].sort(), ['src/lib/helper.ts', 'src/lib/old.ts']);
+  // action.yml starts old.ts by path: it and everything it imports are live, even if only tests import it
+  assert.deepEqual([...testsOnly(parsed, new Set(['src/lib/old.ts']))], []);
+});
+
+test('routeOf turns Next.js route files into URLs and skips ones outside services call', () => {
+  assert.deepEqual(routeOf('app/(marketing)/old-pricing/page.tsx'), { url: '/old-pricing', prefix: '/old-pricing', kind: 'page' });
+  assert.deepEqual(routeOf('src/app/api/users/[id]/route.ts'), { url: '/api/users/[id]', prefix: '/api/users', kind: 'api' });
+  assert.deepEqual(routeOf('pages/blog/index.tsx'), { url: '/blog', prefix: '/blog', kind: 'page' });
+  assert.equal(routeOf('pages/api/users.ts').kind, 'api');
+  assert.equal(routeOf('app/page.tsx'), null);
+  assert.equal(routeOf('app/api/stripe/webhook/route.ts'), null);
+  assert.equal(routeOf('app/[slug]/page.tsx'), null);
+  assert.equal(routeOf('pages/_app.tsx'), null);
+  assert.equal(routeOf('src/lib/db.ts'), null);
 });

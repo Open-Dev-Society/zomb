@@ -1,7 +1,7 @@
 {
   "name": "zomb",
   "version": "0.0.1",
-  "description": "Find the zombie code in your repo: code nobody uses and nobody understands.",
+  "description": "Find the zombie code in your repo: code that is still there but no longer in use.",
   "type": "module",
   "bin": {
     "zomb": "src/cli.js"
