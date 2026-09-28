@@ -94,7 +94,7 @@ test('publicSecretNames flags browser-exposed secrets, not public keys', () => {
 });
 
 test('findDangerous: string-built SQL and shell, not regex.exec', () => {
-  const src = 'await db.query(`SELECT * FROM users WHERE id = ${id}`);\nconst m = re.exec(a + b);\nexec(`rm -rf ${dir}`);\n// eval(x) in a comment\n<div dangerouslySetInnerHTML={{ __html: post.body }} />\n<script dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />\n<style dangerouslySetInnerHTML={{ __html: CSS }} />';
+  const src = 'await db.query(`SELECT * FROM users WHERE id = ${id}`);\nconst m = re.exec(a + b);\nexec(`rm -rf ${dir}`);\n// eval(x) in a comment\n<div dangerouslySetInnerHTML={{ __html: post.body }} />\n<script dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />\n<style dangerouslySetInnerHTML={{ __html: CSS }} />\nconst phaseScript = `try{document.documentElement.dataset.phase="day"}catch(e){}`;\n<script dangerouslySetInnerHTML={{ __html: phaseScript }} />';
   assert.deepEqual(findDangerous(src).map((d) => [d.line, d.severity]), [[1, 'high'], [5, 'medium']]);
   assert.deepEqual(findDangerous(src, { shell: true }).map((d) => d.line), [1, 3, 5]);
 });
@@ -111,6 +111,9 @@ test('open routes: changes data or touches the database with no auth check', () 
 
 test('env files and ranking', () => {
   assert.ok(isEnvFile('.env') && isEnvFile('apps/web/.env.local') && !isEnvFile('.env.example'));
+  const env = (committed) => securityFindings({ secrets: [], envFiles: [{ file: '.env', values: 2, committed }], publicVars: [], dangerous: [], openRoutes: [], audit: {} })[0];
+  assert.equal(env(true).severity, 'high');
+  assert.equal(env(false).title, '.env file not in .gitignore');
   assert.equal(envValues('A=1\nB=\n# C=3\nexport D="x"\n'), 2);
   const f = securityFindings({ secrets: [], envFiles: [], publicVars: [], dangerous: [{ severity: 'medium', kind: 'eval', file: 'a.ts', line: 1 }], openRoutes: [], audit: { top: [{ name: 'next', severity: 'critical', title: 'SSRF', fix: true }], counts: { critical: 1, high: 0 } } });
   assert.deepEqual(f.map((x) => x.severity), ['high', 'medium']);

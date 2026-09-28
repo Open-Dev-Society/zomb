@@ -68,11 +68,13 @@ async function authorship(files, agentOf) {
 // Knip follows imports only; files started by path (action.yml, spawn(), package.json scripts) look unused to it.
 async function referencedBy(file) {
   const needles = [path.basename(file), file.replace(/\.[^./]+$/, '').split('/').slice(-2).join('/')];
-  const out = await sh('git', ['grep', '-l', '-F', ...needles.flatMap((n) => ['-e', n]), '--', '.', `:!${file}`], root).catch(() => '');
+  const out = await sh('git', ['grep', '-l', '--untracked', '-F', ...needles.flatMap((n) => ['-e', n]), '--', '.', `:!${file}`], root).catch(() => '');
   return out.split('\n')[0] || null;
 }
 
-const all = (await sh('git', ['ls-files'], root)).split('\n').filter(Boolean);
+// what's on disk: committed files plus new ones that aren't gitignored (uncommitted work is still your code)
+const all = [...new Set((await sh('git', ['ls-files', '--cached', '--others', '--exclude-standard'], root)).split('\n').filter(Boolean))];
+const tracked = new Set((await sh('git', ['ls-files'], root)).split('\n').filter(Boolean));
 const files = all.filter((f) => CODE.test(f) && !/\.d\.[cm]?ts$/.test(f));
 if (!files.length) fail(`no JS/TS files tracked in ${root}`);
 log(`scanning ${files.length} JS/TS files in ${root}`);
@@ -84,7 +86,7 @@ const [knipOut, { agentOf, history }, parsed, copies, orphans, scan, audit, midd
   parseAll(root, files),
   clones(root, files),
   orphanRoutes(root, files),
-  scanRepo(root, all),
+  scanRepo(root, all, tracked),
   npmAudit(root),
   middleware ? readFile(path.join(root, middleware), 'utf8') : '',
 ]);
@@ -171,10 +173,10 @@ if (unusedPackages.length) console.log(`  unused packages: ${unusedPackages.map(
 if (maybe.length) console.log(`  maybe zombie: ${maybe.map((m) => m.url).join(', ')} (nothing in the repo links to them)`);
 
 const added = recent.reduce((s, m) => s + m.added, 0), deleted = recent.reduce((s, m) => s + m.deleted, 0);
-console.log(`\nSPRAWL  last 3 months: ${n(added)} lines added, ${n(deleted)} deleted${added ? ` (${Math.round((deleted / added) * 100)} deleted per 100 added)` : ''}`);
+console.log(`\nSPRAWL  ${added ? `last 3 months: ${n(added)} lines added, ${n(deleted)} deleted (${Math.round((deleted / added) * 100)} deleted per 100 added)` : 'no commits in the last 3 months'}`);
 console.log(`  ${[dupes?.length && `${plural(dupes.length, 'duplicated block')}`, data.sprawl.names.length && `${plural(data.sprawl.names.length, 'name')} defined in 2+ files`, data.sprawl.versions.length && `${plural(data.sprawl.versions.length, 'versioned copy', )} (V2, old, copy…)`.replace('copys', 'copies')].filter(Boolean).join(' · ') || 'no duplication found'}`);
 for (const o of data.sprawl.overlaps) console.log(`  ${o.libraries.length} ${o.job}: ${o.libraries.map((l) => `${l.name} (${l.files})`).join(', ')}`);
 
 const a = data.architecture;
-console.log(`\nARCHITECTURE  ${[plural(a.cycles.length, 'import cycle'), `${plural(a.big.length, 'file')} over 500 lines`, `shared code in ${plural(a.shared.length, 'folder')}`, a.deep.length && `${plural(a.deep.length, 'file')} with ../../../ imports`].filter(Boolean).join(' · ')}`);
+console.log(`\nARCHITECTURE  ${[plural(a.cycles.length, 'import cycle'), `${plural(a.big.length, 'file')} over 500 lines`, a.shared.length > 1 && `shared code in ${a.shared.length} folders`, a.deep.length && `${plural(a.deep.length, 'file')} with ../../../ imports`].filter(Boolean).join(' · ')}`);
 console.log(`\nreport: ${out}`);

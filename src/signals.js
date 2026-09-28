@@ -104,7 +104,7 @@ export async function orphanRoutes(root, files) {
       const prefix = route.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       // a quote, backtick, ( or } right before the path; /, ?, #, a quote or line end right after
       const re = `["'\`(}]${prefix}([/?#"'\`]|$)`;
-      const hits = await promisify(execFile)('git', ['grep', '-l', '-E', '-e', re, '--', '.', `:!${file}`], { cwd: root }).then((r) => r.stdout, () => '');
+      const hits = await promisify(execFile)('git', ['grep', '-l', '--untracked', '-E', '-e', re, '--', '.', `:!${file}`], { cwd: root }).then((r) => r.stdout, () => '');
       if (!hits.trim()) out.set(file, route.url);
     }),
   );

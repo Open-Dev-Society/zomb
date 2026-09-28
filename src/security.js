@@ -61,9 +61,15 @@ const DANGEROUS = [
 // text -> [{ severity, kind, line }]; `shell` = the file imports child_process (so `re.exec(x + y)` isn't a shell call)
 export function findDangerous(text, { shell = false } = {}) {
   const out = [];
+  // const phaseScript = `...` (no ${}) in the same file: HTML the author wrote, not user input
+  const constants = new Set([...text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(['"`])(?:(?!\2|\$\{)[\s\S])*\2/g)].map((m) => m[1]));
   text.split('\n').forEach((l, i) => {
     if (l.length > 2000 || /^\s*(\/\/|\*)/.test(l)) return;
-    for (const [severity, kind, re, needs] of DANGEROUS) if ((!needs || shell) && re.test(l)) out.push({ severity, kind, line: i + 1 });
+    for (const [severity, kind, re, needs] of DANGEROUS) {
+      if ((needs && !shell) || !re.test(l)) continue;
+      if (kind.startsWith('Raw HTML') && constants.has(l.match(/__html:\s*([A-Za-z_$][\w$]*)\s*\}/)?.[1])) continue;
+      out.push({ severity, kind, line: i + 1 });
+    }
   });
   return out;
 }
@@ -85,7 +91,12 @@ export function securityFindings({ secrets, envFiles, publicVars, dangerous, ope
   const out = [];
   const list = (files) => files.slice(0, 3).join(', ') + (files.length > 3 ? ` and ${files.length - 3} more` : '');
   for (const s of secrets) out.push({ severity: 'high', title: `${s.kind} in the code`, where: `${s.file}:${s.line}`, detail: `${s.preview} is readable by anyone with access to the repo. Rotate it, then move it to an environment variable.` });
-  for (const e of envFiles) out.push({ severity: 'high', title: 'Committed .env file', where: e.file, detail: `${e.values} value${e.values > 1 ? 's are' : ' is'} in git history. Rotate them, remove the file and add it to .gitignore.` });
+  for (const e of envFiles)
+    out.push(
+      e.committed
+        ? { severity: 'high', title: 'Committed .env file', where: e.file, detail: `${e.values} value${e.values > 1 ? 's are' : ' is'} in git history. Rotate them, remove the file and add it to .gitignore.` }
+        : { severity: 'medium', title: '.env file not in .gitignore', where: e.file, detail: `${e.values} value${e.values > 1 ? 's are' : ' is'} one \`git add .\` away from being committed. Add it to .gitignore.` },
+    );
   for (const v of publicVars) out.push({ severity: 'high', title: `${v.name} is shipped to every browser`, where: list(v.files), detail: 'Variables with this prefix are bundled into client code, so a secret here is public. Rename it without the prefix and use it only on the server.' });
   if (audit?.top?.length) {
     const c = audit.counts;
@@ -108,7 +119,7 @@ export function openRoute(facts, touches) {
 
 const SKIP = /\.(png|jpe?g|gif|webp|avif|ico|svg|woff2?|ttf|otf|eot|pdf|zip|gz|tgz|mp4|webm|mov|mp3|wav|ogg|wasm|lockb?)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i;
 // Scans every tracked text file (not just JS/TS): keys hide in JSON, YAML, markdown and .env files too.
-export async function scanRepo(root, allFiles) {
+export async function scanRepo(root, allFiles, tracked = new Set(allFiles)) {
   const secrets = [], envFiles = [], publicVars = new Map();
   let inTests = 0; // key-shaped strings in test files: almost always fakes for redaction tests, so counted, not listed
   for (const f of allFiles) {
@@ -117,7 +128,7 @@ export async function scanRepo(root, allFiles) {
     if (!text || text.length > 1e6 || text.includes('\0')) continue;
     if (isEnvFile(f)) {
       const values = envValues(text);
-      if (values) envFiles.push({ file: f, values });
+      if (values) envFiles.push({ file: f, values, committed: tracked.has(f) });
       continue; // a committed env file is reported whole
     }
     const found = findSecrets(text);
