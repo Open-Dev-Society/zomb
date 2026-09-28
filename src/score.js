@@ -20,86 +20,21 @@ export function parseBlame(text) {
   return shas;
 }
 
-// Careful review runs a few hundred lines an hour; approving faster than this with no comments is a rubber stamp.
-// ponytail: fixed 1,000 lines/hour cut-off; make it configurable if teams push back
-const MAX_REVIEW_RATE = 1000;
-
-// -> { state: 'unreviewed' | 'rubber' | 'reviewed', lines, seconds } where seconds = last commit to first human approval
-export function classifyPR(pr) {
-  const lines = (pr.additions || 0) + (pr.deletions || 0);
-  const human = pr.reviews.filter((r) => !r.bot && r.author !== pr.author);
-  if (!human.length) return { state: 'unreviewed', lines, seconds: null };
-  const talked = pr.threads > 0 || human.some((r) => r.body.trim());
-  const firstApproval = human.filter((r) => r.state === 'APPROVED').map((r) => Date.parse(r.at)).sort()[0];
-  const seconds = firstApproval ? Math.max(0, (firstApproval - Date.parse(pr.lastCommitAt)) / 1000) : null;
-  const tooFast = seconds !== null && (seconds < 120 || lines / Math.max(seconds / 3600, 1 / 60) > MAX_REVIEW_RATE);
-  return { state: tooFast && !talked ? 'rubber' : 'reviewed', lines, seconds };
-}
-
-const duration = (s) => (s < 90 ? `${Math.round(s)} seconds` : s < 5400 ? `${Math.round(s / 60)} minutes` : `${Math.round(s / 3600)} hours`);
-export const prEvidence = (pr) =>
-  ({
-    unreviewed: `PR #${pr.number} (${pr.lines.toLocaleString('en-US')} lines) merged with no human review`,
-    rubber: `PR #${pr.number}: ${pr.lines.toLocaleString('en-US')} lines approved ${duration(pr.seconds)} after the last commit, no comments`,
-    reviewed: `PR #${pr.number} had a real review`,
-  })[pr.state];
-
-// What a file can hurt. Judged from its imports (and a few source patterns), so it stays cheap and explainable.
+// What a file can hurt, from its imports (and a few source patterns).
 const SURFACES = [
   ['payments', /^(stripe|@stripe\/|razorpay|dodopayments|@dodopayments\/|@paddle\/|@lemonsqueezy\/|braintree|@paypal\/)/],
   ['auth', /^(next-auth|@auth\/|jsonwebtoken|jose|bcrypt|bcryptjs|argon2|@clerk\/|lucia|passport|better-auth|iron-session|@kinde-oss\/|@supabase\/ssr)/],
   ['database', /^(pg|postgres|mysql2?|mongodb|mongoose|@prisma\/client|drizzle-orm|@supabase\/supabase-js|kysely|ioredis|redis|better-sqlite3|sqlite3|@neondatabase\/|@planetscale\/|@libsql\/|@vercel\/postgres|@vercel\/kv|@upstash\/redis|firebase-admin)/],
   ['shell', /^(node:)?child_process$/],
-  ['network', /^(axios|got|ky|undici|node-fetch|openai|@anthropic-ai\/|resend|nodemailer|twilio)/],
 ];
-export const SURFACE_WEIGHT = { payments: 3, auth: 3, database: 2, secrets: 2, shell: 2, endpoint: 2, network: 1 };
-
-export function surfacesOf(file, specs, src) {
+export function surfacesOf(specs, src) {
   const tags = new Set(SURFACES.filter(([, re]) => specs.some((s) => re.test(s))).map(([tag]) => tag));
-  if (/\bfetch\(/.test(src)) tags.add('network');
   // NEXT_PUBLIC_/VITE_/PUBLIC_ keys ship to the browser on purpose, so they aren't secrets
   if (/process\.env\.(?!NEXT_PUBLIC_|VITE_|PUBLIC_|EXPO_PUBLIC_)\w*(SECRET|KEY|TOKEN|PASSWORD|PRIVATE)/i.test(src)) tags.add('secrets');
-  if (/(^|\/)(app\/(.*\/)?route\.[cm]?[jt]sx?|pages\/api\/.+)$/.test(file)) tags.add('endpoint');
   return [...tags];
 }
 
-// git log records -> path -> { changes, fixes } within the last `days`
-export function churn(history, now = Date.now(), days = 90) {
-  const out = new Map();
-  for (const c of history) {
-    if (now - Date.parse(c.date) > days * 864e5) continue;
-    const fix = /\b(fix|fixes|fixed|bug|hotfix|revert|patch)\b/i.test(c.subject);
-    for (const { path } of c.files) {
-      const row = out.get(path) || { changes: 0, fixes: 0 };
-      row.changes++;
-      if (fix) row.fixes++;
-      out.set(path, row);
-    }
-  }
-  return out;
-}
-
-// git log records -> [{ month:'2026-03', agent, human }] lines of JS/TS added per month
-export function timeline(history, agentOf) {
-  const months = new Map();
-  for (const c of history) {
-    const month = c.date.slice(0, 7);
-    const row = months.get(month) || { month, agent: 0, human: 0 };
-    const added = c.files.reduce((n, f) => n + f.added, 0);
-    row[agentOf.get(c.sha) ? 'agent' : 'human'] += added;
-    months.set(month, row);
-  }
-  return [...months.values()].filter((m) => m.agent + m.human).sort((a, b) => a.month.localeCompare(b.month));
-}
-
-// Zombie code = in the codebase, not in use. The second axis says whether a human understands it.
-export const QUADRANTS = {
-  zombie: { label: 'Zombie, nobody knows it', note: 'Not in use, and no human understands it: delete first' },
-  'zombie-known': { label: 'Zombie, someone knows it', note: 'Not in use: check with whoever wrote it, then delete' },
-  unread: { label: 'Unread code', note: 'In use, but nobody has read it' },
-  healthy: { label: 'Healthy', note: 'In use and understood' },
-};
-export const isZombie = (f) => f.quadrant === 'zombie' || f.quadrant === 'zombie-known';
+// ---------- zombie code: in the codebase, not in use ----------
 
 const TEST = /(^|\/)(__tests__|__mocks__|tests?|e2e|cypress|playwright|fixtures?)\/|\.(test|spec|stories|story|bench)\.[cm]?[jt]sx?$/;
 // Files a framework or runtime loads by name, so having no importer (or only test importers) doesn't make them dead.
@@ -142,61 +77,74 @@ export function routeOf(file) {
   return prefix && prefix !== '/' ? { url, prefix, kind } : null;
 }
 
-// f: { path, lines, agentLines, agents:Set, unusedFile, testsOnly, orphanRoute, unusedExports, referencedBy, pr, dependents, touches[], churn:{changes,fixes} }
-export function scoreFile(f) {
-  const evidence = [];
-  const used = !(f.unusedFile || f.testsOnly) || Boolean(f.referencedBy);
-  if ((f.unusedFile || f.testsOnly) && f.referencedBy) evidence.push(`Nothing imports it, but ${f.referencedBy} names its path: kept as in use`);
-  else if (f.unusedFile) evidence.push('Nothing imports or names this file (Knip + repo search)');
-  else if (f.testsOnly) evidence.push('Only tests import it: its own tests are the only thing keeping it alive');
-  if (f.orphanRoute) evidence.push(`Nothing in the repo links to or calls ${f.orphanRoute}: check your analytics before deleting`);
-  if (f.unusedExports) evidence.push(`${f.unusedExports} unused export${f.unusedExports > 1 ? 's' : ''}`);
-  if (f.dependents) evidence.push(`${f.dependents} file${f.dependents > 1 ? 's' : ''} depend on it`);
-  if (f.touches?.length) evidence.push(`Touches ${f.touches.join(', ')}`);
-  if (f.churn?.changes) evidence.push(`Changed ${f.churn.changes} time${f.churn.changes > 1 ? 's' : ''} in 90 days${f.churn.fixes ? `, ${f.churn.fixes} of them fixes` : ''}`);
+// ---------- sprawl: AI keeps creating, never deleting ----------
 
-  const agentShare = f.lines ? f.agentLines / f.lines : 0;
-  if (agentShare) evidence.push(`${Math.round(agentShare * 100)}% of lines last written by ${[...f.agents].join(', ') || 'an agent'}`);
-  if (f.pr) evidence.push(prEvidence(f.pr));
-
-  // ponytail: agent lines count as half-read after a real review; tune weights against dogfood repos
-  const read = 1 - agentShare + agentShare * (f.pr?.state === 'reviewed' ? 0.5 : 0);
-  const understood = read >= 0.5;
-  const quadrant = used ? (understood ? 'healthy' : 'unread') : understood ? 'zombie-known' : 'zombie';
-  return { ...f, used, understood, read, quadrant, evidence, risk: riskOf({ ...f, read }) };
-}
-
-// How much an unread file can hurt: unread share x reach x what it touches x how hot it is x size.
-// ponytail: hand-set multipliers, only used for ranking; calibrate against incidents once teams share them
-export function riskOf(f) {
-  const unread = 1 - f.read;
-  const reach = 1 + Math.log2(1 + (f.dependents || 0));
-  const touch = 1 + (f.touches || []).reduce((n, t) => n + (SURFACE_WEIGHT[t] || 0), 0);
-  const heat = 1 + Math.log2(1 + (f.churn?.changes || 0)) + (f.churn?.fixes || 0) * 0.5;
-  const size = 1 + Math.log10(1 + (f.lines || 0) / 100);
-  return unread * reach * touch * heat * size;
-}
-
-// ponytail: 10 lines a minute reading estimate
-export const READ_LINES_PER_MIN = 10;
-
-// Riskiest unread files first, until they cover `target` of all unread risk, `max` files, or about `budget` minutes of reading.
-export function readingPlan(files, target = 0.6, max = 8, budget = 60) {
-  const unread = files.filter((f) => f.quadrant === 'unread' && f.risk > 0).sort((a, b) => b.risk - a.risk);
-  const total = unread.reduce((n, f) => n + f.risk, 0);
-  const plan = [];
-  let covered = 0;
-  let minutes = 0;
-  for (const f of unread) {
-    const cost = f.lines / READ_LINES_PER_MIN;
-    if (plan.length >= max || (total && covered / total >= target)) break;
-    if (plan.length && minutes + cost > budget) continue; // too long for this hour: try the next riskiest
-    plan.push(f);
-    covered += f.risk;
-    minutes += cost;
+// git log records -> [{ month:'2026-03', added, deleted }] lines of JS/TS per month
+export function growth(history) {
+  const months = new Map();
+  for (const c of history) {
+    const month = c.date.slice(0, 7);
+    const row = months.get(month) || { month, added: 0, deleted: 0 };
+    for (const f of c.files) (row.added += f.added), (row.deleted += f.deleted);
+    months.set(month, row);
   }
-  const lines = plan.reduce((n, f) => n + f.lines, 0);
-  return { files: plan, minutes: Math.ceil(lines / READ_LINES_PER_MIN), coverage: total ? covered / total : 0, unread: unread.length };
+  return [...months.values()].filter((m) => m.added + m.deleted).sort((a, b) => a.month.localeCompare(b.month));
+}
+
+// Files and folders whose name says "another version of something": LandingV2, api-old, utils copy, ov2/, legacy/.
+const VERSIONED = /^(.+?)(?:[-_. ]?(?:v\d+|new|old|copy|backup|bak|legacy|temp|tmp|final|fixed|deprecated|unused|draft)|(?<=[a-z0-9])(?:V\d+|New|Old|Copy|Backup|Legacy|Temp|Final|Fixed|Deprecated|Draft))$/;
+const VERSIONED_DIR = /^(v\d+|old|legacy|backup|deprecated|archive|unused|temp|tmp|[a-z]{1,3}v\d+)$/i;
+// -> [{ path, original|null }] for files, then [{ path:'dir/', files:N }] for versioned folders (counted once, not per file)
+export function versionSprawl(files) {
+  const set = new Set(files);
+  const out = [];
+  const folders = new Map();
+  for (const f of files) {
+    if (isTest(f)) continue;
+    const dir = f.slice(0, f.lastIndexOf('/') + 1);
+    const segs = dir.split('/');
+    const at = segs.findIndex((seg) => VERSIONED_DIR.test(seg));
+    if (at >= 0) {
+      const folder = `${segs.slice(0, at + 1).join('/')}/`;
+      folders.set(folder, (folders.get(folder) || 0) + 1);
+      continue;
+    }
+    const [, stem, ext] = f.slice(dir.length).match(/^(.*?)((?:\.[a-z0-9]+)+)$/i) || [null, f.slice(dir.length), ''];
+    const m = stem.match(VERSIONED);
+    if (m && m[1].length > 1) out.push({ path: f, original: set.has(`${dir}${m[1]}${ext}`) ? `${dir}${m[1]}${ext}` : null });
+  }
+  return [...out, ...[...folders].map(([path, n]) => ({ path, files: n, original: null }))];
+}
+
+// Libraries that do the same job. Aliases fold a library's companion packages into one.
+const OVERLAP = {
+  'icon sets': ['lucide-react', 'react-icons', '@heroicons/react', '@tabler/icons-react', '@phosphor-icons/react', '@radix-ui/react-icons', 'react-feather', '@fortawesome/react-fontawesome', '@mui/icons-material', 'iconoir-react', '@remixicon/react'],
+  'date libraries': ['moment', 'dayjs', 'date-fns', 'luxon'],
+  'HTTP clients': ['axios', 'got', 'ky', 'node-fetch', 'superagent', 'ofetch'],
+  'animation libraries': ['framer-motion', 'motion', 'gsap', 'react-spring', 'animejs', 'lottie-react'],
+  'state managers': ['redux', 'zustand', 'jotai', 'recoil', 'mobx', 'valtio'],
+  'form libraries': ['react-hook-form', 'formik', '@tanstack/react-form', 'react-final-form'],
+  'validation libraries': ['zod', 'yup', 'joi', 'valibot', 'superstruct'],
+  'CSS-in-JS libraries': ['styled-components', 'emotion', '@stitches/react', '@vanilla-extract/css'],
+  'toast libraries': ['sonner', 'react-hot-toast', 'react-toastify', 'notistack'],
+  'chart libraries': ['recharts', 'chart.js', 'nivo', 'victory', 'visx', 'apexcharts', 'echarts', 'd3', 'highcharts'],
+  'UI kits': ['@mui/material', '@chakra-ui/react', 'antd', '@mantine/core', '@nextui-org/react', '@heroui/react', 'react-bootstrap', 'semantic-ui-react'],
+  'markdown renderers': ['react-markdown', 'marked', 'markdown-it', 'showdown'],
+  'data-fetching libraries': ['swr', '@tanstack/react-query'],
+  ORMs: ['@prisma/client', 'drizzle-orm', 'kysely', 'typeorm', 'sequelize', 'mongoose', 'knex'],
+};
+const ALIAS = { '@reduxjs/toolkit': 'redux', 'react-redux': 'redux', 'react-chartjs-2': 'chart.js', 'echarts-for-react': 'echarts', 'react-apexcharts': 'apexcharts', '@emotion/react': 'emotion', '@emotion/styled': 'emotion', '@react-spring/web': 'react-spring', 'react-query': '@tanstack/react-query' };
+export const packageOf = (spec) => (spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]);
+const family = (pkg) => ALIAS[pkg] || (pkg.startsWith('@nivo/') ? 'nivo' : pkg.startsWith('@visx/') ? 'visx' : pkg.startsWith('d3-') ? 'd3' : pkg);
+// packages: Map(package name -> [files importing it]) -> [{ job, libraries:[{ name, files }] }]
+export function overlaps(packages) {
+  const out = [];
+  for (const [job, libs] of Object.entries(OVERLAP)) {
+    const used = new Map();
+    for (const [pkg, files] of packages) if (libs.includes(family(pkg))) used.set(family(pkg), [...new Set([...(used.get(family(pkg)) || []), ...files])]);
+    if (used.size > 1) out.push({ job, libraries: [...used].map(([name, files]) => ({ name, files: files.length })).sort((a, b) => b.files - a.files) });
+  }
+  return out;
 }
 
 // Names that every framework file exports: two route files both exporting GET is not a duplicate.
@@ -205,20 +153,58 @@ const CONVENTION = new Set(['default', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 
 // parsed: Map(path -> { exported:[names] }) -> [{ name, files }] for names defined in 2+ files
 export function sameNames(parsed) {
   const byName = new Map();
-  for (const [file, p] of parsed) for (const name of new Set(p.exported)) if (!CONVENTION.has(name)) byName.set(name, [...(byName.get(name) || []), file]);
+  for (const [file, p] of parsed) for (const name of new Set(p.exported)) if (!CONVENTION.has(name) && !isTest(file)) byName.set(name, [...(byName.get(name) || []), file]);
   return [...byName].filter(([, files]) => files.length > 1).map(([name, files]) => ({ name, files })).sort((a, b) => b.files.length - a.files.length);
 }
 
-// Group scored files by their first `depth` folders.
-export function rollup(files, depth = 2) {
-  const folders = new Map();
+// ---------- architecture ----------
+
+// Import cycles (runtime imports only; type imports vanish at build time). graph: Map(path -> [paths]) -> [[paths]]
+// ponytail: recursive Tarjan; switch to an explicit stack if a repo has import chains thousands deep
+export function cycles(graph) {
+  let index = 0;
+  const idx = new Map(), low = new Map(), stack = [], on = new Set(), out = [];
+  const visit = (v) => {
+    idx.set(v, index), low.set(v, index++), stack.push(v), on.add(v);
+    for (const w of graph.get(v) || []) {
+      if (!graph.has(w)) continue;
+      if (!idx.has(w)) visit(w), low.set(v, Math.min(low.get(v), low.get(w)));
+      else if (on.has(w)) low.set(v, Math.min(low.get(v), idx.get(w)));
+    }
+    if (low.get(v) === idx.get(v)) {
+      const scc = [];
+      let w;
+      do (w = stack.pop()), on.delete(w), scc.push(w);
+      while (w !== v);
+      if (scc.length > 1) out.push(scc.sort());
+    }
+  };
+  for (const v of graph.keys()) if (!idx.has(v)) visit(v);
+  return out.sort((a, b) => b.length - a.length);
+}
+
+// Where shared code lives: every utils/lib/helpers/shared/common folder. Several of them means nobody knows where to look.
+export function sharedFolders(files) {
+  const dirs = new Set();
   for (const f of files) {
-    const key = f.path.split('/').slice(0, -1).slice(0, depth).join('/') || '(root)';
-    const row = folders.get(key) || { folder: key, total: 0, zombie: 0, 'zombie-known': 0, unread: 0, healthy: 0 };
-    row.total++;
-    row[f.quadrant]++;
-    folders.set(key, row);
+    if (isTest(f)) continue;
+    const segs = f.split('/').slice(0, -1);
+    const i = segs.findIndex((s) => /^(utils?|libs?|helpers?|common|shared|core)$/i.test(s));
+    if (i >= 0) dirs.add(segs.slice(0, i + 1).join('/'));
   }
-  const bad = (r) => r.zombie + r['zombie-known'] + r.unread;
-  return [...folders.values()].sort((a, b) => bad(b) - bad(a) || b.total - a.total);
+  return [...dirs].sort();
+}
+
+// Component file naming: PascalCase vs kebab-case vs camelCase. Mixed styles make files hard to guess.
+export function namingStyles(files) {
+  const count = { PascalCase: 0, 'kebab-case': 0, camelCase: 0, snake_case: 0 };
+  for (const f of files) {
+    if (!/\.[jt]sx$/.test(f) || isTest(f) || isEntry(f)) continue;
+    const stem = f.slice(f.lastIndexOf('/') + 1).replace(/\.[jt]sx$/, '');
+    if (/^[A-Z][A-Za-z0-9]*$/.test(stem)) count.PascalCase++;
+    else if (/^[a-z0-9]+(-[a-z0-9]+)+$/.test(stem)) count['kebab-case']++;
+    else if (/^[a-z]+[A-Z][A-Za-z0-9]*$/.test(stem)) count.camelCase++;
+    else if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(stem)) count.snake_case++;
+  }
+  return Object.entries(count).filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
 }

@@ -1,138 +1,105 @@
-import { QUADRANTS, isZombie } from './score.js';
-
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const pct = (n, d) => (d ? Math.round((n / d) * 100) : 0);
-const ORDER = ['zombie', 'zombie-known', 'unread', 'healthy'];
+const n = (x) => x.toLocaleString('en-US');
+const plural = (k, word) => `${n(k)} ${word}${k === 1 ? '' : 's'}`;
 const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const code = (s) => `<code>${esc(s)}</code>`;
+const more = (total, shown) => (total > shown ? `<p class="muted">…and ${n(total - shown)} more</p>` : '');
 
-const fileItem = (f) =>
-  `<li><code>${esc(f.path)}</code> <span class="muted">${f.lines} lines</span><ul>${f.evidence.map((e) => `<li>${esc(e)}</li>`).join('')}</ul></li>`;
-
-function list(files, q, limit = 50) {
-  const rows = files.filter((f) => f.quadrant === q).sort((a, b) => b.risk - a.risk || b.lines - a.lines);
-  if (!rows.length) return '';
-  const more = rows.length > limit ? `<p class="muted">…and ${rows.length - limit} more</p>` : '';
-  return `<section><h2><span class="dot ${q}"></span>${QUADRANTS[q].label} <span class="muted">${rows.length}</span></h2>
-  <p class="muted">${QUADRANTS[q].note}</p><ul class="files">${rows.slice(0, limit).map(fileItem).join('')}</ul>${more}</section>`;
+function securitySection({ findings, audit, middlewareAuth, middleware, inTests }) {
+  const notes = [
+    inTests && `${plural(inTests, 'key-shaped string')} in test files ${inTests === 1 ? 'was' : 'were'} skipped: tests use fake keys to check redaction.`,
+    audit.skipped && `Vulnerable packages weren't checked: ${audit.skipped}.`,
+    middlewareAuth && `${middleware} checks auth, so API routes weren't checked one by one.`,
+  ].filter(Boolean);
+  return `<section id="security"><h2>Security</h2>
+  ${findings.length ? `<ul class="items">${findings.map((f) => `<li><span class="sev ${f.severity}">${f.severity}</span><div><b>${esc(f.title)}</b> ${code(f.where)}${f.detail ? `<p class="muted">${esc(f.detail)}</p>` : ''}</div></li>`).join('')}</ul>` : '<p class="muted">Nothing found: no keys in code, no browser-exposed secrets, no open routes or string-built queries.</p>'}
+  ${notes.map((t) => `<p class="note">${esc(t)}</p>`).join('')}</section>`;
 }
 
-function zombieSection(files, usedError) {
-  if (usedError) return '';
-  const rows = files.filter(isZombie).sort((a, b) => (a.quadrant === 'zombie' ? 0 : 1) - (b.quadrant === 'zombie' ? 0 : 1) || b.lines - a.lines);
-  if (!rows.length) return `<section><h2>Zombie code</h2><p class="muted">None found: every file is in use.</p></section>`;
-  const lines = rows.reduce((n, f) => n + f.lines, 0);
-  const nobody = rows.filter((f) => f.quadrant === 'zombie').length;
-  return `<section class="zombies"><h2>Zombie code <span class="muted">${rows.length}</span></h2>
-  <p>${rows.length} file${rows.length > 1 ? 's' : ''} (${lines.toLocaleString('en-US')} lines) sit in your codebase but aren't in use. ${nobody ? `Nobody understands ${nobody === rows.length ? 'any of them' : `${nobody} of them`}, so ${nobody > 1 ? 'those are' : 'that one is'} the safest to delete first.` : 'Someone understands each of them: check with them, then delete.'}</p>
-  <ol class="files risks">${rows.slice(0, 50).map(fileItem).join('')}</ol>${rows.length > 50 ? `<p class="muted">…and ${rows.length - 50} more</p>` : ''}</section>`;
-}
-
-function maybeSection(files) {
-  const rows = files.filter((f) => f.orphanRoute && !isZombie(f));
-  if (!rows.length) return '';
-  return `<section><h2>Maybe zombie <span class="muted">${rows.length}</span></h2>
-  <p class="muted">Pages and API routes that nothing in the repo links to or calls. Outside links, bookmarks or other services may still use them, so check your analytics before deleting.</p>
-  <ul class="files">${rows.sort((a, b) => b.lines - a.lines).map((f) => `<li><code>${esc(f.orphanRoute)}</code> <span class="muted">${esc(f.path)} · ${f.lines} lines</span></li>`).join('')}</ul></section>`;
-}
-
-function planSection(plan) {
-  if (!plan.files.length) return `<section><h2>Read these first</h2><p class="muted">No unread code: every live file has a human behind it.</p></section>`;
-  return `<section class="plan"><h2>Read these first</h2>
-  <p>${plan.files.length > 1 ? `These ${plan.files.length} files hold` : 'This file holds'} ${pct(plan.coverage, 1)}% of your unread risk: code that's in use but nobody has read, ranked by what it can break. About ${plan.minutes} minutes of reading.</p>
-  <ol class="files risks">${plan.files.map(fileItem).join('')}</ol></section>`;
-}
-
-function timelineSection(months) {
-  const shown = months.slice(-12);
-  if (!shown.some((m) => m.agent)) return '';
-  const first = months.find((m) => m.agent);
-  const last = shown.at(-1);
-  const label = (m) => `${MONTH[Number(m.month.slice(5)) - 1]} ${m.month.slice(2, 4)}`;
-  return `<section><h2>Who writes your new code</h2>
-  <p class="muted">Share of JS/TS lines added each month that an agent wrote. Agents first show up in ${label(first)}; in ${label(last)} they wrote ${pct(last.agent, last.agent + last.human)}%.</p>
-  <div class="months">${shown
-    .map((m) => {
-      const p = pct(m.agent, m.agent + m.human);
-      return `<div class="month" title="${esc(label(m))}: ${m.agent.toLocaleString('en-US')} agent lines, ${m.human.toLocaleString('en-US')} human lines"><span>${p}%</span><div class="col"><i style="height:${p}%"></i></div><small>${esc(label(m))}</small></div>`;
-    })
-    .join('')}</div></section>`;
-}
-
-function dupesSection(dupes, names) {
-  if (dupes === null) return `<section><h2>Copy-paste</h2><p class="warn">Duplicate detection was skipped: jscpd has no binary for this platform.</p></section>`;
-  if (!dupes.length && !names.length) return '';
-  const lines = dupes.reduce((n, d) => n + d.lines, 0);
-  const byAgent = dupes.filter((d) => d.a.by !== 'a human' || d.b.by !== 'a human').length;
-  const side = (s) => `<code>${esc(s.file)}:${s.start}–${s.end}</code> <span class="muted">by ${esc(s.by)}</span>`;
-  return `<section><h2>Copy-paste</h2>
-  ${dupes.length ? `<p class="muted">${dupes.length} blocks of code appear twice (${lines.toLocaleString('en-US')} duplicated lines). An agent wrote at least one side of ${byAgent}. Every copy is one more place a bug fix has to land.</p>
-  <ul class="files">${dupes.slice(0, 12).map((d) => `<li>${side(d.a)}<br>${side(d.b)} <span class="muted">· ${d.lines} lines</span></li>`).join('')}</ul>` : ''}
-  ${names.length ? `<h3>Same name, different files</h3><p class="muted">The same function or component is defined in more than one place. Often an agent rebuilt something that already existed.</p>
-  <ul class="files">${names.slice(0, 12).map((n) => `<li><code>${esc(n.name)}</code> <span class="muted">in ${n.files.length} files</span><ul>${n.files.map((f) => `<li>${esc(f)}</li>`).join('')}</ul></li>`).join('')}</ul>` : ''}
+function zombieSection({ files, packages, exports, maybe }, knipError) {
+  if (knipError) return `<section id="zombie"><h2>Zombie code</h2><p class="note">Skipped: ${esc(knipError)}</p></section>`;
+  const lines = files.reduce((s, f) => s + f.lines, 0);
+  return `<section id="zombie"><h2>Zombie code</h2>
+  <p>${files.length ? `${plural(files.length, 'file')} (${n(lines)} lines) sit in your codebase but aren't in use. Delete them and nothing breaks.` : 'Every file is in use.'}</p>
+  ${files.length ? `<ul class="items">${files.slice(0, 50).map((f) => `<li><div>${code(f.path)} <span class="muted">${n(f.lines)} lines</span><p class="muted">${esc(f.why)}${f.share >= 0.5 ? `. ${Math.round(f.share * 100)}% written by ${esc(f.agents.join(', '))}` : ''}</p></div></li>`).join('')}</ul>${more(files.length, 50)}` : ''}
+  ${packages.length ? `<h3>Unused packages <span class="muted">${packages.length}</span></h3><p class="muted">Installed but never imported. Every one is extra install time, bundle risk and attack surface.</p><p>${packages.map((p) => `${code(p.name)}${p.dev ? ' <span class="muted">dev</span>' : ''}`).join(' ')}</p>` : ''}
+  ${maybe.length ? `<h3>Maybe zombie <span class="muted">${maybe.length}</span></h3><p class="muted">Pages and API routes nothing in the repo links to or calls. Outside links or other services may still use them, so check your analytics before deleting.</p><ul class="items">${maybe.map((m) => `<li><div>${code(m.url)} <span class="muted">${esc(m.file)} · ${n(m.lines)} lines</span></div></li>`).join('')}</ul>` : ''}
+  ${exports.length ? `<h3>Dead code inside live files <span class="muted">${n(exports.reduce((s, e) => s + e.names.length, 0))} exports</span></h3><p class="muted">Functions, components and types that are exported but never imported anywhere.</p><ul class="items">${exports.slice(0, 15).map((e) => `<li><div>${code(e.file)}<p class="muted">${esc(e.names.slice(0, 8).join(', '))}${e.names.length > 8 ? ` and ${e.names.length - 8} more` : ''}</p></div></li>`).join('')}</ul>${more(exports.length, 15)}` : ''}
   </section>`;
 }
 
-export function renderReport({ repo, commit, date, files, folders, plan, months, dupes, names, hasAgents, hasReviews, usedError }) {
-  const n = (q) => files.filter((f) => f.quadrant === q).length;
-  const used = files.filter((f) => f.used).length;
-  const cell = (q) => `<div class="cell ${q}"><b>${n(q)}</b><span>${QUADRANTS[q].label}</span><small>${QUADRANTS[q].note}</small></div>`;
-  const warnings = [
-    usedError && `Zombie detection was skipped, so every file counts as in use. Knip said: ${usedError}`,
-    !hasAgents && 'No agent co-author trailers found, so "understood" may be too optimistic.',
-    !hasReviews && 'No GitHub review data (no remote, no token, or no merged PRs).',
-  ].filter(Boolean);
+function growthChart(months) {
+  const shown = months.slice(-12);
+  if (!shown.length) return '';
+  const max = Math.max(...shown.map((m) => Math.max(m.added, m.deleted)), 1);
+  const label = (m) => `${MONTH[Number(m.month.slice(5)) - 1]} ${m.month.slice(2, 4)}`;
+  return `<div class="months">${shown
+    .map((m) => `<div class="month" title="${esc(label(m))}: ${n(m.added)} added, ${n(m.deleted)} deleted"><div class="col"><i class="add" style="height:${(m.added / max) * 100}%"></i><i class="del" style="height:${(m.deleted / max) * 100}%"></i></div><small>${esc(label(m))}</small></div>`)
+    .join('')}</div><p class="legend"><i class="add"></i> lines added <i class="del"></i> lines deleted</p>`;
+}
 
+function sprawlSection({ months, recent, dupes, names, versions, overlaps }) {
+  const added = recent.reduce((s, m) => s + m.added, 0);
+  const deleted = recent.reduce((s, m) => s + m.deleted, 0);
+  return `<section id="sprawl"><h2>Sprawl</h2>
+  <p>${added ? `In the last 3 months ${n(added)} lines were added and ${n(deleted)} deleted: <b>${Math.round((deleted / added) * 100)} deleted for every 100 added</b>. Code that only grows gets harder to find your way around.` : 'No JS/TS changes in the last 3 months.'}</p>
+  ${growthChart(months)}
+  ${overlaps.length ? `<h3>Libraries doing the same job</h3><p class="muted">Each new AI session tends to reach for its favourite library. Pick one per job and migrate the rest.</p><ul class="items">${overlaps.map((o) => `<li><div><b>${o.libraries.length} ${esc(o.job)}</b><p class="muted">${o.libraries.map((l) => `${esc(l.name)} (${plural(l.files, 'file')})`).join(' · ')}</p></div></li>`).join('')}</ul>` : ''}
+  ${versions.length ? `<h3>Versioned copies <span class="muted">${versions.length}</span></h3><p class="muted">Files and folders named V2, new, old, copy or legacy. Usually one version is dead.</p><ul class="items">${versions.slice(0, 20).map((v) => `<li><div>${code(v.path)}${v.original ? ` <span class="muted">next to ${esc(v.original)}</span>` : ''}${v.files ? ` <span class="muted">folder with ${plural(v.files, 'file')}</span>` : ''}</div></li>`).join('')}</ul>${more(versions.length, 20)}` : ''}
+  ${dupes === null ? '<p class="note">Copy-paste detection was skipped: jscpd has no binary for this platform.</p>' : ''}
+  ${dupes?.length ? `<h3>Copy-paste <span class="muted">${dupes.length} blocks, ${n(dupes.reduce((s, d) => s + d.lines, 0))} lines</span></h3><p class="muted">Every copy is one more place a bug fix has to land.</p><ul class="items">${dupes.slice(0, 12).map((d) => `<li><div>${code(`${d.a.file}:${d.a.start}–${d.a.end}`)}<br>${code(`${d.b.file}:${d.b.start}–${d.b.end}`)} <span class="muted">${d.lines} lines</span></div></li>`).join('')}</ul>${more(dupes.length, 12)}` : ''}
+  ${names.length ? `<h3>Same name, different files <span class="muted">${names.length}</span></h3><p class="muted">The same function or component defined more than once. Often an agent rebuilt something that already existed.</p><ul class="items">${names.slice(0, 12).map((x) => `<li><div>${code(x.name)} <span class="muted">in ${x.files.length} files</span><p class="muted">${esc(x.files.join(' · '))}</p></div></li>`).join('')}</ul>${more(names.length, 12)}` : ''}
+  </section>`;
+}
+
+function architectureSection({ cycles, big, shared, deep, naming }) {
+  const mixed = naming.length > 1 && naming[1][1] / naming.reduce((s, [, k]) => s + k, 0) >= 0.15;
+  return `<section id="architecture"><h2>Architecture</h2>
+  ${cycles.length ? `<h3>Import cycles <span class="muted">${cycles.length}</span></h3><p class="muted">Files that import each other in a loop. They break tree-shaking, cause undefined-at-startup bugs and make it impossible to change one without the other.</p><ul class="items">${cycles.slice(0, 10).map((c) => `<li><div><b>${c.length} files</b><p class="muted">${esc(c.slice(0, 6).join(' → '))}${c.length > 6 ? ` and ${c.length - 6} more` : ''}</p></div></li>`).join('')}</ul>${more(cycles.length, 10)}` : '<p class="muted">No import cycles.</p>'}
+  ${big.length ? `<h3>Oversized files <span class="muted">${big.length}</span></h3><p class="muted">Over 500 lines. Agents keep appending to the file they already have open; split these by job.</p><ul class="items">${big.slice(0, 12).map((b) => `<li><div>${code(b.file)} <span class="muted">${n(b.lines)} lines${b.dependents ? ` · ${plural(b.dependents, 'file')} depend${b.dependents === 1 ? 's' : ''} on it` : ''}</span></div></li>`).join('')}</ul>${more(big.length, 12)}` : ''}
+  ${shared.length > 2 ? `<h3>Shared code in ${shared.length} places</h3><p class="muted">Helpers live in several utils/lib/helpers/shared folders, so nobody knows where to look and new ones get written instead.</p><p>${shared.map(code).join(' ')}</p>` : ''}
+  ${deep.length ? `<h3>Deep relative imports <span class="muted">${plural(deep.length, 'file')}</span></h3><p class="muted">Imports like ../../../ break whenever a file moves. A path alias (@/lib/…) fixes them for good.</p><ul class="items">${deep.slice(0, 8).map((d) => `<li><div>${code(d.file)} <span class="muted">${plural(d.count, 'import')}</span></div></li>`).join('')}</ul>${more(deep.length, 8)}` : ''}
+  ${mixed ? `<h3>Mixed file naming</h3><p class="muted">Component files use ${naming.length} naming styles, so you can't guess a file's name: ${naming.map(([style, k]) => `${esc(style)} (${n(k)})`).join(', ')}.</p>` : ''}
+  </section>`;
+}
+
+export function renderReport({ repo, commit, date, files, lines, knipError, zombie, security, sprawl, architecture }) {
+  const high = security.findings.filter((f) => f.severity === 'high').length;
+  const zLines = zombie.files.reduce((s, f) => s + f.lines, 0);
+  const added = sprawl.recent.reduce((s, m) => s + m.added, 0);
+  const deleted = sprawl.recent.reduce((s, m) => s + m.deleted, 0);
+  const card = (href, big, label, sub, tone = '') => `<a class="card ${tone}" href="#${href}"><b>${big}</b><span>${label}</span><small>${sub}</small></a>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(repo)} · zomb</title><style>
-:root{--bg:#fbfaf8;--fg:#1c1b19;--muted:#77726b;--line:#e6e2dc;--first:#2f6fe4;--danger:#d4442e;--safe:#9a948b;--healthy:#3f9b62}
-@media (prefers-color-scheme:dark){:root{--bg:#141413;--fg:#ecebe8;--muted:#9a958d;--line:#2c2b28;--first:#6b9bff;--danger:#ff6b55;--safe:#77726b;--healthy:#5cc185}}
+:root{--bg:#fbfaf8;--fg:#1c1b19;--muted:#77726b;--line:#e6e2dc;--high:#d4442e;--medium:#c88a12;--good:#3f9b62;--ink2:#b9b3aa}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--fg:#ecebe8;--muted:#9a958d;--line:#2c2b28;--high:#ff6b55;--medium:#e0a93a;--good:#5cc185;--ink2:#55514b}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
-main{max-width:880px;margin:0 auto;padding:56px 20px 80px}.muted{color:var(--muted)}code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
-header p{margin:0}h1{font-size:40px;letter-spacing:-.02em;margin:4px 0 2px}h2{font-size:17px;margin:56px 0 4px;display:flex;align-items:center;gap:8px}h3{font-size:15px;margin:32px 0 4px}
-.headline{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:40px 0}.headline b{display:block;font-size:56px;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-.zombies{border:1px solid var(--first);border-radius:12px;padding:4px 24px 12px;background:color-mix(in srgb,var(--first) 5%,transparent)}.zombies h2{margin-top:20px}
-.plan{border:1px solid var(--danger);border-radius:12px;padding:4px 24px 12px;background:color-mix(in srgb,var(--danger) 5%,transparent)}.plan h2{margin-top:20px}
-.risks{list-style:decimal;padding-left:22px}.risks>li::marker{color:var(--muted);font-variant-numeric:tabular-nums}
-.grid{display:grid;grid-template-columns:28px 1fr 1fr;grid-template-rows:1fr 1fr 28px;gap:8px;margin-top:8px}
-.cell{border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:2px;min-height:132px}
-.cell b{font-size:36px;line-height:1.1;font-variant-numeric:tabular-nums}.cell span{font-weight:600}.cell small{color:var(--muted)}
-.cell.zombie{border-color:var(--first);background:color-mix(in srgb,var(--first) 8%,transparent)}
-.cell.unread{border-color:var(--danger);background:color-mix(in srgb,var(--danger) 8%,transparent)}
-.axis{color:var(--muted);font-size:12px;display:flex;align-items:center;justify-content:center}.axis.y{writing-mode:vertical-rl;transform:rotate(180deg)}
-.warn{border-left:3px solid var(--danger);padding:4px 12px;margin:24px 0 0;color:var(--muted)}
-.months{display:flex;gap:6px;align-items:flex-end;margin-top:20px;overflow-x:auto}.month{flex:1;min-width:34px;display:flex;flex-direction:column;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
-.month span{font-size:12px}.month small{font-size:11px;color:var(--muted);white-space:nowrap}.col{width:100%;height:120px;background:var(--line);border-radius:4px;display:flex;align-items:flex-end;overflow:hidden}.col i{display:block;width:100%;background:var(--danger)}
-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;font-weight:400}th{color:var(--muted);font-size:13px}
-.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;min-width:120px;background:var(--line)}.bar i{display:block}
-.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.zombie.dot,.bar .zombie{background:var(--first)}.unread.dot,.bar .unread{background:var(--danger)}
-.zombie-known.dot,.bar .zombie-known{background:var(--safe)}.healthy.dot,.bar .healthy{background:var(--healthy)}
-.files{padding:0;margin:16px 0 0}.files:not(.risks){list-style:none}.files>li{padding:12px 0;border-bottom:1px solid var(--line)}.files ul{margin:4px 0 0;padding-left:18px;color:var(--muted);font-size:14px}
-footer{margin-top:56px;color:var(--muted);font-size:13px}footer p{margin:0 0 8px}
-@media (max-width:600px){.headline{grid-template-columns:1fr}.headline b{font-size:44px}h1{font-size:30px}.plan,.zombies{padding:4px 16px 12px}}
+main{max-width:880px;margin:0 auto;padding:56px 20px 80px}.muted{color:var(--muted)}p{margin:6px 0}code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+header p{margin:0}h1{font-size:40px;letter-spacing:-.02em;margin:4px 0 2px}h2{font-size:22px;letter-spacing:-.01em;margin:64px 0 8px}h3{font-size:15px;margin:32px 0 2px}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:36px 0 8px}.card{border:1px solid var(--line);border-radius:12px;padding:16px;color:inherit;text-decoration:none;display:flex;flex-direction:column;gap:2px}
+.card:hover{border-color:var(--muted)}.card b{font-size:30px;line-height:1.1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}.card span{font-weight:600;font-size:14px}.card small{color:var(--muted);font-size:13px}
+.card.bad{border-color:var(--high);background:color-mix(in srgb,var(--high) 6%,transparent)}
+.items{list-style:none;padding:0;margin:12px 0 0}.items>li{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line)}.items>li>div{min-width:0}.items p{font-size:14px;margin:2px 0 0}
+.sev{flex:none;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:2px 0;width:58px;color:var(--medium)}.sev.high{color:var(--high)}
+.note{border-left:3px solid var(--line);padding:2px 12px;margin:16px 0 0;color:var(--muted);font-size:14px}
+.months{display:flex;gap:6px;align-items:flex-end;margin-top:20px;overflow-x:auto}.month{flex:1;min-width:34px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.month small{font-size:11px;color:var(--muted);white-space:nowrap}.col{width:100%;height:120px;display:flex;align-items:flex-end;gap:2px}.col i{display:block;flex:1;border-radius:3px 3px 0 0;min-height:1px}
+i.add{background:var(--ink2)}i.del{background:var(--good)}.legend{font-size:12px;color:var(--muted)}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 12px;vertical-align:-1px}.legend i:first-child{margin-left:0}
+footer{margin-top:64px;color:var(--muted);font-size:13px}footer p{margin:0 0 8px}
+@media (max-width:700px){.cards{grid-template-columns:1fr 1fr}h1{font-size:30px}}
 </style></head><body><main>
-<header><p class="muted">zomb · commit ${esc(commit)} · ${esc(date)}</p><h1>${esc(repo)}</h1><p class="muted">${files.length} JS/TS files checked on two questions: is it in use, and has a human understood it?</p></header>
-<div class="headline"><div><b>${usedError ? '–' : `${pct(files.length - used, files.length)}%`}</b>of files are zombie code: in the codebase, not in use</div><div><b>${pct(n('unread'), used)}%</b>of live code nobody has read</div></div>
-${warnings.map((w) => `<p class="warn">${esc(w)}</p>`).join('')}
-${zombieSection(files, usedError)}
-${maybeSection(files)}
-${planSection(plan)}
-<h2>The map</h2>
-<div class="grid">
-<div class="axis y">understood → </div>${cell('zombie-known')}${cell('healthy')}
-<div class="axis y">not understood</div>${cell('zombie')}${cell('unread')}
-<div></div><div class="axis">not in use (zombie)</div><div class="axis">in use →</div>
+<header><p class="muted">zomb · commit ${esc(commit)} · ${esc(date)}</p><h1>${esc(repo)}</h1><p class="muted">${n(files)} JS/TS files, ${n(lines)} lines, checked for security problems, zombie code, sprawl and architecture.</p></header>
+<div class="cards">
+${card('security', n(security.findings.length), 'security issues', high ? `${n(high)} high` : 'none high', high ? 'bad' : '')}
+${card('zombie', knipError ? '–' : n(zLines), 'lines of zombie code', knipError ? 'skipped' : `${plural(zombie.files.length, 'file')} · ${plural(zombie.packages.length, 'unused package')}`)}
+${card('sprawl', added ? n(Math.round((deleted / added) * 100)) : '–', 'deleted per 100 added', 'last 3 months')}
+${card('architecture', n(architecture.cycles.length), 'import cycles', `${plural(architecture.big.length, 'file')} over 500 lines`)}
 </div>
-${timelineSection(months)}
-${dupesSection(dupes, names)}
-<h2>By folder</h2>
-<table><tr><th>Folder</th><th>Files</th><th>Mix</th><th>Zombie</th><th>Unread</th></tr>${folders
-    .slice(0, 30)
-    .map(
-      (r) => `<tr><td><code>${esc(r.folder)}</code></td><td>${r.total}</td><td><div class="bar">${ORDER.map((q) => `<i class="${q}" style="width:${pct(r[q], r.total)}%"></i>`).join('')}</div></td><td>${r.zombie + r['zombie-known']}</td><td>${r.unread}</td></tr>`,
-    )
-    .join('')}</table>
-${list(files, 'unread')}
-<footer><p><b>How this is scored.</b> Zombie code is in the codebase but not in use: Knip finds no import of it and no other file names its path, or only tests import it. Maybe zombie: a page or API route nothing in the repo links to or calls. Understood: the share of lines last written by a human, plus half of the agent-written lines when their latest PR had a real human review (a PR approved within 2 minutes, or faster than 1,000 lines an hour, with no comments, doesn't count); 50% or more counts as understood.</p>
-<p><b>Risk</b> ranks unread files by how unread they are, how many files depend on them, what they touch (payments, auth, database, secrets, shell, public endpoints, network), how often they changed and needed fixes in the last 90 days, and their size. Reading time assumes 10 lines a minute. Agents are detected from commit authors and Co-Authored-By trailers. Folder view only, never per person.</p></footer>
+${securitySection(security)}
+${zombieSection(zombie, knipError)}
+${sprawlSection(sprawl)}
+${architectureSection(architecture)}
+<footer><p><b>How this is checked.</b> Security: known key formats in every tracked file (shown masked), committed .env files, secret-looking NEXT_PUBLIC_/VITE_ variables, API routes that change data or touch the database or payments with no auth, session, API-key or signature check in them or their imports, string-built SQL and shell commands, eval, raw HTML, disabled TLS, and npm audit for production packages.</p>
+<p>Zombie code: Knip finds no import of the file and no other file names its path, or only its own tests import it. Files started by path, dot-folders and *.config.* files always count as in use. Sprawl and architecture come from git history, the import graph (oxc), and jscpd for copy-paste. Everything runs on your machine.</p></footer>
 </main></body></html>`;
 }

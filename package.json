@@ -1,7 +1,7 @@
 {
   "name": "zomb",
   "version": "0.0.1",
-  "description": "Find the zombie code in your repo: code that is still there but no longer in use.",
+  "description": "A health check for AI-written codebases: security holes, zombie code, sprawl and architecture.",
   "type": "module",
   "bin": {
     "zomb": "src/cli.js"
