@@ -1,39 +1,47 @@
 # zomb
 
-Find the zombie code in your repo.
+A health check for codebases written with AI.
 
-Zombie code is code that sits in your codebase but isn't in use: files nothing imports, files only their own tests keep alive, and pages or API routes nothing links to. Coding agents leave a lot of it behind. `zomb` finds it, tells you how many lines you can delete, and which of it nobody on the team even understands.
+Coding agents keep creating and never delete. After a few months the repo is full of code nothing uses, three libraries doing one job, `LandingV2` next to `Landing`, keys pasted into files, and API routes anyone can call. `zomb` finds all of it in one command.
 
 ```bash
 npx zomb              # run inside any git repo
 npx zomb path/to/repo --out report.html
 ```
 
-One command writes a single HTML report. Your code never leaves your machine.
+It writes a single HTML report. Your code never leaves your machine.
 
-What you get:
+## What it checks
 
-- **Zombie code:** every file that isn't in use, biggest first, with why (nothing imports it, or only tests do) and who wrote it.
-- **Maybe zombie:** pages and API routes nothing in the repo links to or calls. Check your analytics before deleting these.
-- **Read these first:** code that *is* in use but nobody has read, ranked by what it can break: how many files depend on it, what it touches (payments, auth, database, secrets, shell, public endpoints) and how often it needed fixes lately. The list fits in about an hour of reading.
-- **Who writes your new code:** the share of new lines each month that agents wrote.
-- **Copy-paste:** blocks of code that appear twice, and helpers defined in more than one file.
-- **Review speed:** PRs approved faster than anyone can read them (for example, 1,240 lines approved 30 minutes after the last commit, with no comments).
+**Security**
+- API keys pasted into code (Stripe, OpenAI, Anthropic, AWS, GitHub, Slack, Google, database URLs with passwords), shown masked so the report never re-leaks them
+- Committed `.env` files
+- Secret-looking variables shipped to the browser (`NEXT_PUBLIC_OPENAI_API_KEY`, `VITE_…_SECRET`)
+- API routes that change data, or touch the database or payments, with no auth, session, API-key or signature check
+- SQL and shell commands built from strings, `eval`, raw HTML from variables, TLS checks turned off
+- Known-vulnerable production packages (`npm audit`)
 
-|                    | **Not in use (zombie)**      | **In use**      |
-| ------------------ | ---------------------------- | --------------- |
-| **Understood**     | Zombie, someone knows it     | Healthy         |
-| **Not understood** | **Zombie, nobody knows it**  | **Unread code** |
+**Zombie code:** code that's in the codebase but not in use
+- Files nothing imports or names, and files only their own tests keep alive
+- Unused npm packages, and exports nothing imports
+- Pages and API routes nothing in the repo links to (listed as "maybe", check your analytics)
 
-## How it scores
+**Sprawl:** the codebase only grows
+- Lines added vs deleted each month
+- Libraries doing the same job (three icon sets, two date libraries…)
+- Versioned copies (`V2`, `old`, `copy`, `legacy`), copy-pasted blocks, and helpers defined in more than one file
 
-- **Zombie (not in use):** [Knip](https://knip.dev) finds no import of the file and no other file in the repo names its path, or only tests import it. Files started by path (`action.yml` entry points, `package.json` scripts), files in dot-folders like `.claude/` and `.github/`, and `*.config.*` files always count as in use. Install dependencies first: Knip needs them to read your config files.
-- **Maybe zombie:** a Next.js page or API route whose URL appears nowhere else in the repo. Webhooks, auth callbacks, crons and SEO files are skipped, and so are API routes in repos that are only an API.
-- **Understood:** the share of lines last written by a human (`git blame`), plus half of the agent-written lines when their latest PR had a real human review. 50% or more counts as understood.
-- **Agents** are detected from commit authors and `Co-Authored-By` trailers (Claude Code, Cursor, Copilot, Codex, Devin, Jules, Aider and others).
-- **Reviews** come from your last 100 merged GitHub PRs, using `GITHUB_TOKEN`, `GH_TOKEN` or `gh auth token`. A PR approved within 2 minutes of its last commit, or faster than 1,000 lines an hour, with no comments counts as a rubber stamp. Pass `--no-github` to skip this.
+**Architecture**
+- Import cycles, files over 500 lines, shared code scattered across `utils/`, `lib/`, `helpers/`…
+- Deep `../../../` imports and mixed file-naming styles
 
-The map is per file and per folder. It never scores people.
+## Good to know
+
+- Install dependencies first: Knip needs them to read your config files.
+- Files started by path (`action.yml` entry points, `package.json` scripts), files in dot-folders like `.claude/`, and `*.config.*` files always count as in use.
+- Webhooks, auth callbacks, crons and SEO routes are never called "maybe zombie"; repos that are only an API skip that check.
+- Key-shaped strings in test files are counted, not listed: tests use fakes to check redaction.
+- If your `middleware.ts` checks auth, API routes aren't checked one by one.
 
 ## Develop
 
