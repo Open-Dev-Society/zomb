@@ -27,6 +27,8 @@ const CODE = /\.[cm]?[jt]sx?$/;
 // build output, vendored and generated code: nobody wrote it by hand
 const SKIP = /(^|\/)(node_modules|dist|build|out|vendor|\.next|\.nuxt|coverage|generated|__generated__)\/|\.min\.[cm]?js$|\.d\.[cm]?ts$/;
 const DEPTH = 400;
+// every author is judged on the same 12 months: older code has had longer to go dead
+const SINCE = '2025-10-01';
 
 // ---------- who wrote a commit
 const NAMES = [['Claude', /anthropic|claude/i], ['Cursor', /cursor/i], ['Copilot', /copilot/i], ['Codex', /openai|codex/i], ['Devin', /devin/i], ['Jules', /jules/i], ['Aider', /aider/i], ['Gemini', /gemini/i]];
@@ -96,17 +98,17 @@ async function find(perAgent) {
 const bucket = () => ({ commits: 0, added: 0, deleted: 0, filesAdded: 0, filesDeleted: 0, testsDeleted: 0, shortcuts: {}, secrets: 0, versioned: 0, deadLines: 0, sizes: [] });
 
 // Every non-merge commit in the last DEPTH: lines added and deleted, and what the added lines do. Streams: some logs are big.
-export async function history(dir, skip = new Set()) {
-  const args = ['log', '--no-merges', '--no-renames', '-U0', '--no-color', '--no-ext-diff', '--format=%x1e%H%x00%P%x00%an <%ae>%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)', '-p', '--', '*.ts', '*.tsx', '*.js', '*.jsx', '*.mjs', '*.cjs', '*.mts', '*.cts'];
+export async function history(dir, skip = new Set(), since = '') {
+  const args = ['log', '--no-merges', '--no-renames', '-U0', '--no-color', '--no-ext-diff', '--format=%x1e%H%x00%P%x00%aI%x00%an <%ae>%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)', '-p', '--', '*.ts', '*.tsx', '*.js', '*.jsx', '*.mjs', '*.cjs', '*.mts', '*.cts'];
   const git = spawn('git', args, { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] });
   const commits = [];
   let c = null;
   let f = null;
   for await (const line of readline.createInterface({ input: git.stdout, crlfDelay: Infinity })) {
     if (line.startsWith('\x1e')) {
-      const [sha, parents, author, trailers = ''] = line.slice(1).split('\x00');
+      const [sha, parents, date, author, trailers = ''] = line.slice(1).split('\x00');
       // a root or shallow-boundary commit "adds" the whole repo: it isn't anyone's work in this window
-      c = { sha, agent: agentOf([author, ...trailers.split('\x1f')]), counted: Boolean(parents) && !skip.has(sha), files: [] };
+      c = { sha, date, agent: agentOf([author, ...trailers.split('\x1f')]), counted: Boolean(parents) && !skip.has(sha) && date >= since, files: [] };
       commits.push(c);
       f = null;
     } else if (!c) continue;
@@ -154,7 +156,7 @@ async function measure({ repo, stars }) {
   try {
     await exec('git', ['clone', '--quiet', '--single-branch', '--no-tags', `--depth=${DEPTH}`, `https://github.com/${repo}.git`, dir], { timeout: 180_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
     const shallow = new Set((existsSync(path.join(dir, '.git', 'shallow')) ? await readFile(path.join(dir, '.git', 'shallow'), 'utf8') : '').split('\n').filter(Boolean));
-    const commits = await history(dir, shallow);
+    const commits = await history(dir, shallow, SINCE);
     const agents = {};
     const of = (name) => (agents[name] ||= bucket());
     const agentBySha = new Map();
@@ -188,7 +190,8 @@ async function measure({ repo, stars }) {
     const pkg = await readFile(path.join(dir, 'package.json'), 'utf8').catch(() => '');
     const judged = files.length <= 6000 && !/"(nuxt|unplugin-auto-import|@nuxt\/[^"]+)"\s*:/.test(pkg);
     const dead = judged ? await deadFiles(dir, files) : [];
-    for (const d of dead) for (const sha of parseBlame(await git('blame', '--porcelain', '-w', '--', d.file).catch(() => ''))) if (agentBySha.has(sha)) of(agentBySha.get(sha)).deadLines++;
+    // files over 3,000 lines don't count as anyone's added lines (generated), so they don't count as dead lines either
+    for (const d of dead.filter((x) => x.lines <= 3000)) for (const sha of parseBlame(await git('blame', '--porcelain', '-w', '--', d.file).catch(() => ''))) if (agentBySha.has(sha)) of(agentBySha.get(sha)).deadLines++;
     for (const b of Object.values(agents)) b.sizes = b.sizes.sort((x, y) => x - y);
     if (!judged) for (const b of Object.values(agents)) b.deadLines = null;
     return { repo, stars, files: files.length, deadFiles: judged ? dead.length : null, commits: commits.length, agents };
@@ -216,48 +219,81 @@ async function measureAll(jobs) {
   );
 }
 
-// ---------- summary: rates per 1,000 lines added, pooled and per repo
+// ---------- summary: rates per author, how sure we can be of them, and each agent against the humans in its own repos
+const METRICS = {
+  shortcutsPer1k: [(b) => Object.values(b.shortcuts).reduce((s, n) => s + n, 0), (b) => b.added, 1000],
+  deletedPer100: [(b) => b.deleted, (b) => b.added, 100],
+  deadPer1k: [(b) => b.deadLines ?? 0, (b) => (b.deadLines === null ? 0 : b.added), 1000],
+  versionedPer100Commits: [(b) => b.versioned, (b) => b.commits, 100],
+  secretsPer1M: [(b) => b.secrets, (b) => b.added, 1e6],
+};
+const round = (x) => (x === null || !Number.isFinite(x) ? null : Math.round(x * 100) / 100);
+// the rate over a set of repos, each repo's lines pooled
+const rate = (repos, name, [num, den, scale]) => {
+  let n = 0, d = 0;
+  for (const r of repos) if (r.agents[name]) (n += num(r.agents[name])), (d += den(r.agents[name]));
+  return d ? (n / d) * scale : null;
+};
+// 90% bootstrap range over repos: which repos happened to be sampled matters more than any single commit
+function bootstrap(repos, stat, runs = 1000) {
+  let seed = 42;
+  const random = () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296);
+  const values = [];
+  for (let i = 0; i < runs; i++) {
+    const v = stat(repos.map(() => repos[Math.floor(random() * repos.length)]));
+    if (v !== null && Number.isFinite(v)) values.push(v);
+  }
+  values.sort((a, b) => a - b);
+  return values.length ? [round(values[Math.floor(values.length * 0.05)]), round(values[Math.floor(values.length * 0.95)])] : [null, null];
+}
+
 async function summary() {
   const dir = path.join(DATA, 'repos');
   const results = (await Promise.all((await readdir(dir)).map(async (f) => JSON.parse(await readFile(path.join(dir, f), 'utf8'))))).filter((r) => !r.error);
-  const per1k = (n, d) => (d ? Math.round((n / d) * 1000 * 100) / 100 : null);
-  const median = (xs) => (xs.length ? xs[Math.floor(xs.length / 2)] : null);
   const names = [...new Set(results.flatMap((r) => Object.keys(r.agents)))];
   const agents = names
     .map((name) => {
       const inRepos = results.filter((r) => r.agents[name]?.commits);
       const sum = (k) => inRepos.reduce((s, r) => s + r.agents[name][k], 0);
-      const shortcuts = {};
-      for (const r of inRepos) for (const [k, n] of Object.entries(r.agents[name].shortcuts)) shortcuts[k] = (shortcuts[k] || 0) + n;
-      const allShortcuts = Object.values(shortcuts).reduce((s, n) => s + n, 0);
-      // each repo counts once, so one huge repo can't decide the result (repos with 300+ lines from this author)
-      const fair = inRepos.filter((r) => r.agents[name].added >= 300);
-      const repoMean = (f, repos = fair) => (repos.length ? Math.round((repos.reduce((s, r) => s + f(r.agents[name]), 0) / repos.length) * 100) / 100 : null);
-      const added = sum('added');
+      // agent vs humans, only in repos where both wrote 300+ lines
+      const paired = name === 'Human' ? [] : inRepos.filter((r) => r.agents[name].added >= 300 && r.agents.Human?.added >= 300);
+      const metrics = Object.fromEntries(
+        Object.entries(METRICS).map(([key, m]) => {
+          const judged = key === 'deadPer1k' ? inRepos.filter((r) => r.agents[name].deadLines !== null) : inRepos;
+          const pairedJudged = key === 'deadPer1k' ? paired.filter((r) => r.agents[name].deadLines !== null) : paired;
+          const out = { value: round(rate(judged, name, m)), range: bootstrap(judged, (rs) => rate(rs, name, m)) };
+          if (pairedJudged.length >= 5)
+            out.vsHumans = {
+              repos: pairedJudged.length,
+              agent: round(rate(pairedJudged, name, m)),
+              human: round(rate(pairedJudged, 'Human', m)),
+              ratioRange: bootstrap(pairedJudged, (rs) => rate(rs, name, m) / rate(rs, 'Human', m)),
+            };
+          return [key, out];
+        }),
+      );
+      const kinds = {};
+      for (const r of inRepos) for (const [k, n] of Object.entries(r.agents[name].shortcuts)) kinds[k] = (kinds[k] || 0) + n;
+      const sizes = inRepos.flatMap((r) => r.agents[name].sizes).sort((a, b) => a - b);
       return {
         name,
         repos: inRepos.length,
         commits: sum('commits'),
-        added,
+        added: sum('added'),
         deleted: sum('deleted'),
-        deletedPer100Added: added ? Math.round((sum('deleted') / added) * 100) : null,
-        medianCommit: median(inRepos.flatMap((r) => r.agents[name].sizes).sort((a, b) => a - b)),
-        shortcutsPer1k: per1k(allShortcuts, added),
-        shortcutsPer1kByRepo: repoMean((b) => (Object.values(b.shortcuts).reduce((s, n) => s + n, 0) / b.added) * 1000),
-        shortcuts: Object.fromEntries(Object.entries(shortcuts).map(([k, n]) => [k, per1k(n, added)])),
-        deadPer1k: per1k(inRepos.reduce((s, r) => s + (r.agents[name].deadLines ?? 0), 0), inRepos.reduce((s, r) => s + (r.agents[name].deadLines === null ? 0 : r.agents[name].added), 0)),
-        deadPer1kByRepo: repoMean((b) => (b.deadLines / b.added) * 1000, fair.filter((r) => r.agents[name].deadLines !== null)),
-        versionedPer100Commits: sum('commits') ? Math.round((sum('versioned') / sum('commits')) * 10000) / 100 : null,
+        medianCommit: sizes.length ? sizes[Math.floor(sizes.length / 2)] : null,
         secrets: sum('secrets'),
-        testsDeleted: sum('testsDeleted'),
-        filesAddedPerDeleted: sum('filesDeleted') ? Math.round((sum('filesAdded') / sum('filesDeleted')) * 10) / 10 : null,
+        metrics,
+        shortcuts: Object.fromEntries(Object.entries(kinds).map(([k, n]) => [k, round((n / sum('added')) * 1000)]).sort((a, b) => b[1] - a[1])),
       };
     })
     .filter((a) => a.repos >= 5 && a.added >= 5000)
     .sort((a, b) => b.added - a.added);
-  const out = { generated: new Date().toISOString(), repos: results.length, depth: DEPTH, agents };
+  const out = { generated: new Date().toISOString(), since: SINCE, depth: DEPTH, repos: results.length, commits: agents.reduce((s, a) => s + a.commits, 0), lines: agents.reduce((s, a) => s + a.added, 0), agents };
   await writeFile(path.join(DATA, 'summary.json'), `${JSON.stringify(out, null, 2)}\n`);
-  console.table(agents.map(({ name, repos, commits, added, deletedPer100Added, medianCommit, shortcutsPer1k, shortcutsPer1kByRepo, deadPer1k, deadPer1kByRepo, versionedPer100Commits, secrets }) => ({ name, repos, commits, added, deletedPer100Added, medianCommit, shortcutsPer1k, shortcutsPer1kByRepo, deadPer1k, deadPer1kByRepo, versionedPer100Commits, secrets })));
+  const show = (m) => (m.value === null ? '–' : `${m.value} [${m.range.join('–')}]`);
+  const vs = (m) => (m.vsHumans ? `${m.vsHumans.agent} vs ${m.vsHumans.human} (${m.vsHumans.repos}) ×[${m.vsHumans.ratioRange.join('–')}]` : '');
+  console.table(agents.map((a) => ({ name: a.name, repos: a.repos, commits: a.commits, added: a.added, median: a.medianCommit, shortcuts: show(a.metrics.shortcutsPer1k), 'shortcuts vs humans': vs(a.metrics.shortcutsPer1k), deleted: show(a.metrics.deletedPer100), 'deleted vs humans': vs(a.metrics.deletedPer100), dead: show(a.metrics.deadPer1k), 'dead vs humans': vs(a.metrics.deadPer1k) })));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

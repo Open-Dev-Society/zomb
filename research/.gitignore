@@ -1,2 +1,4 @@
 data/repos/
+data/repos-v1/
 data/*.log
+data/preview.html
