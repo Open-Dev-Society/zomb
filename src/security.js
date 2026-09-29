@@ -90,20 +90,20 @@ export const apiUrl = (file) => file.replace(/^(.*\/)?(app|pages)\//, '/').repla
 export function securityFindings({ secrets, envFiles, publicVars, dangerous, openRoutes, audit }) {
   const out = [];
   const list = (files) => files.slice(0, 3).join(', ') + (files.length > 3 ? ` and ${files.length - 3} more` : '');
-  for (const s of secrets) out.push({ severity: 'high', title: `${s.kind} in the code`, where: `${s.file}:${s.line}`, detail: `${s.preview} is readable by anyone with access to the repo. Rotate it, then move it to an environment variable.` });
+  for (const s of secrets) out.push({ severity: 'high', title: `${s.kind} in the code`, where: `${s.file}:${s.line}`, files: [s.file], detail: `${s.preview} is readable by anyone with access to the repo. Rotate it, then move it to an environment variable.` });
   for (const e of envFiles)
     out.push(
       e.committed
-        ? { severity: 'high', title: 'Committed .env file', where: e.file, detail: `${e.values} value${e.values > 1 ? 's are' : ' is'} in git history. Rotate them, remove the file and add it to .gitignore.` }
-        : { severity: 'medium', title: '.env file not in .gitignore', where: e.file, detail: `${e.values} value${e.values > 1 ? 's are' : ' is'} one \`git add .\` away from being committed. Add it to .gitignore.` },
+        ? { severity: 'high', title: 'Committed .env file', where: e.file, files: [e.file], detail: `${e.values} value${e.values > 1 ? 's are' : ' is'} in git history. Rotate them, remove the file and add it to .gitignore.` }
+        : { severity: 'medium', title: '.env file not in .gitignore', where: e.file, files: [e.file], detail: `${e.values} value${e.values > 1 ? 's are' : ' is'} one \`git add .\` away from being committed. Add it to .gitignore.` },
     );
-  for (const v of publicVars) out.push({ severity: 'high', title: `${v.name} is shipped to every browser`, where: list(v.files), detail: 'Variables with this prefix are bundled into client code, so a secret here is public. Rename it without the prefix and use it only on the server.' });
+  for (const v of publicVars) out.push({ severity: 'high', title: `${v.name} is shipped to every browser`, where: list(v.files), files: v.files, key: v.name, detail: 'Variables with this prefix are bundled into client code, so a secret here is public. Rename it without the prefix and use it only on the server.' });
   if (audit?.top?.length) {
     const c = audit.counts;
-    out.push({ severity: 'high', title: `${audit.top.length} vulnerable package${audit.top.length > 1 ? 's' : ''} in production (${[c.critical && `${c.critical} critical`, c.high && `${c.high} high`].filter(Boolean).join(', ')})`, where: 'npm audit', detail: audit.top.slice(0, 5).map((a) => `${a.name}: ${a.title}${a.fix ? '' : ' (no fix yet)'}`).join('; ') });
+    out.push({ severity: 'high', title: `${audit.top.length} vulnerable package${audit.top.length > 1 ? 's' : ''} in production (${[c.critical && `${c.critical} critical`, c.high && `${c.high} high`].filter(Boolean).join(', ')})`, where: 'npm audit', files: [], package: true, detail: audit.top.slice(0, 5).map((a) => `${a.name}: ${a.title}${a.fix ? '' : ' (no fix yet)'}`).join('; ') });
   }
-  for (const d of dangerous) out.push({ severity: d.severity, title: d.kind, where: `${d.file}:${d.line}` });
-  for (const r of openRoutes) out.push({ severity: 'medium', title: `${apiUrl(r.file)} ${r.why} with no visible auth check`, where: r.file, detail: 'No login, session, API-key or signature check in the route or anything it imports. Fine if it is meant to be public; otherwise anyone can call it.' });
+  for (const d of dangerous) out.push({ severity: d.severity, title: d.kind, where: `${d.file}:${d.line}`, files: [d.file] });
+  for (const r of openRoutes) out.push({ severity: 'medium', title: `${apiUrl(r.file)} ${r.why} with no visible auth check`, where: r.file, files: [r.file], detail: 'No login, session, API-key or signature check in the route or anything it imports. Fine if it is meant to be public; otherwise anyone can call it.' });
   return out.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'high' ? -1 : 1));
 }
 
@@ -117,7 +117,8 @@ export function openRoute(facts, touches) {
 
 // ---------- IO ----------
 
-const SKIP = /\.(png|jpe?g|gif|webp|avif|ico|svg|woff2?|ttf|otf|eot|pdf|zip|gz|tgz|mp4|webm|mov|mp3|wav|ogg|wasm|lockb?)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i;
+// zomb's own report and baseline quote finding titles, so they are skipped too
+const SKIP = /\.(png|jpe?g|gif|webp|avif|ico|svg|woff2?|ttf|otf|eot|pdf|zip|gz|tgz|mp4|webm|mov|mp3|wav|ogg|wasm|lockb?)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|zomb-report\.html)$|(^|\/)\.zomb\//i;
 // Scans every tracked text file (not just JS/TS): keys hide in JSON, YAML, markdown and .env files too.
 export async function scanRepo(root, allFiles, tracked = new Set(allFiles)) {
   const secrets = [], envFiles = [], publicVars = new Map();

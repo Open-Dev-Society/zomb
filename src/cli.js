@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { parseArgs, promisify } from 'node:util';
@@ -9,12 +9,22 @@ import { isAgent, parseBlame, testsOnly, isTest, growth, versionSprawl, overlaps
 import { parseAll, dependents, touches, clones, orphanRoutes } from './signals.js';
 import { scanRepo, npmAudit, openRoute, hasAuthSignal, securityFindings } from './security.js';
 import { renderReport } from './report.js';
-import { toTasks } from './tasks.js';
+import { toTasks, fingerprint, toMarkdown } from './tasks.js';
+import { changesSince, scopeTo, shortcuts } from './diff.js';
 
 const { values: opts, positionals } = parseArgs({
   allowPositionals: true,
-  options: { out: { type: 'string', default: 'zomb-report.html' }, json: { type: 'boolean', default: false }, all: { type: 'boolean', default: false } },
+  options: {
+    out: { type: 'string', default: 'zomb-report.html' },
+    json: { type: 'boolean', default: false },
+    markdown: { type: 'boolean', default: false },
+    all: { type: 'boolean', default: false },
+    since: { type: 'string' },
+    'fail-on': { type: 'string' },
+    'save-baseline': { type: 'boolean', default: false },
+  },
 });
+const LEVELS = { high: ['high'], medium: ['high', 'medium'], low: ['high', 'medium', 'low'] };
 const exec = promisify(execFile);
 const sh = (cmd, args, cwd) => exec(cmd, args, { cwd, maxBuffer: 512 * 1024 * 1024 }).then((r) => r.stdout);
 const CODE = /\.[cm]?[jt]sx?$/;
@@ -23,6 +33,7 @@ const log = (msg) => process.stderr.write(`zomb: ${msg}\n`);
 const target = path.resolve(positionals[0] || '.');
 const fail = (msg) => (log(msg), process.exit(1));
 if (!existsSync(target)) fail(`${target} does not exist`);
+if (opts['fail-on'] && !LEVELS[opts['fail-on']]) fail(`--fail-on takes high, medium or low, not "${opts['fail-on']}"`);
 const root = (await sh('git', ['rev-parse', '--show-toplevel'], target).catch(() => fail(`${target} is not inside a git repo`))).trim();
 
 async function knip() {
@@ -97,8 +108,8 @@ const [knipOut, { agentOf, history }, parsed, copies, orphans, scan, audit, midd
 
 // ---------- zombie code ----------
 const knipOf = new Map(knipOut.issues.map((i) => [i.file, i]));
-// Tools load dot-folders (.claude/, .github/) and *.config.* files by convention, so never call them unused.
-const conventional = (f) => /(^|\/)\.[^/]+\/|\.config\.[cm]?[jt]s$/.test(f);
+// Tools load dot-folders (.claude/, .github/), *.config.* files and test files by convention, so never call them unused.
+const conventional = (f) => /(^|\/)\.[^/]+\/|\.config\.[cm]?[jt]s$/.test(f) || isTest(f);
 const unused = new Set(files.filter((f) => knipOf.get(f)?.files?.length && !conventional(f)));
 const refs = new Map(await Promise.all([...unused].map(async (f) => [f, await referencedBy(f)])));
 // A file started by path (action.yml runs run.ts) is live, and so is everything it imports: settle that before calling anything test-only.
@@ -147,7 +158,7 @@ const big = [...parsed]
   .sort((a, b) => b.lines - a.lines);
 const deep = [...parsed].filter(([f, p]) => p.deep && !isTest(f)).map(([f, p]) => ({ file: f, count: p.deep })).sort((a, b) => b.count - a.count);
 
-const data = {
+let data = {
   repo: path.basename(root),
   commit: (await sh('git', ['rev-parse', '--short', 'HEAD'], root)).trim(),
   date: new Date().toLocaleDateString('en-CA'),
@@ -159,17 +170,46 @@ const data = {
   sprawl: { months, recent, dupes, names: sameNames(parsed), versions: versionSprawl(files), overlaps: overlaps(packages) },
   architecture: { cycles: loops, big, shared: sharedFolders(files), deep, naming: namingStyles(files) },
 };
+// --since: report only what this change touched, plus the shortcuts it took
+if (opts.since) {
+  const change = await changesSince(root, opts.since).catch((e) => fail(`can't diff against ${opts.since}: ${e.message.split('\n')[0]}`));
+  data = { ...scopeTo(data, change), since: opts.since, shortcuts: shortcuts(change.diff, change.deleted) };
+  log(`reporting only the ${change.changed.size} files changed since ${opts.since}`);
+}
 const tasks = toTasks(data);
+
+// Baseline: the findings you already have. With one saved, only new findings fail --fail-on.
+const baselinePath = path.join(root, '.zomb', 'baseline.json');
+if (opts['save-baseline']) {
+  await mkdir(path.dirname(baselinePath), { recursive: true });
+  await writeFile(baselinePath, `${JSON.stringify({ version: 1, commit: data.commit, saved: data.date, fingerprints: [...new Set(tasks.map(fingerprint))].sort() }, null, 2)}\n`);
+  log(`saved ${tasks.length} current findings to .zomb/baseline.json: from now on only new ones fail --fail-on. Commit this file.`);
+  process.exit(0);
+}
+const baseline = existsSync(baselinePath) ? new Set(JSON.parse(await readFile(baselinePath, 'utf8')).fingerprints) : null;
+if (baseline) for (const t of tasks) t.new = !baseline.has(fingerprint(t));
+const failing = opts['fail-on'] ? tasks.filter((t) => LEVELS[opts['fail-on']].includes(t.severity) && (!baseline || t.new)) : [];
+const done = () => {
+  if (failing.length) log(`${failing.length} ${baseline ? 'new ' : ''}finding${failing.length === 1 ? '' : 's'} at or above --fail-on ${opts['fail-on']}`);
+  process.exit(failing.length ? 1 : 0);
+};
 
 // --json: the to-do list for an AI agent (or CI). No HTML, nothing else on stdout.
 if (opts.json) {
+  const z = data.zombie;
   const summary = {
-    security: { high: security.filter((f) => f.severity === 'high').length, medium: security.filter((f) => f.severity === 'medium').length },
-    zombie: { files: zombies.length, lines: zombies.reduce((s, f) => s + f.lines, 0), packages: unusedPackages.length, exports: deadExports.reduce((s, e) => s + e.names.length, 0) },
-    architecture: { cycles: loops.length, bigFiles: big.length },
+    security: { high: tasks.filter((t) => t.area === 'security' && t.severity === 'high').length, medium: tasks.filter((t) => t.area === 'security' && t.severity === 'medium').length },
+    shortcuts: data.shortcuts?.length || 0,
+    zombie: { files: z.files.length, lines: z.files.reduce((s, f) => s + f.lines, 0), packages: z.packages.length, exports: z.exports.reduce((s, e) => s + e.names.length, 0) },
+    architecture: { cycles: data.architecture.cycles.length, bigFiles: data.architecture.big.length },
   };
-  console.log(JSON.stringify({ repo: data.repo, commit: data.commit, summary, tasks }, null, 2));
-  process.exit(0);
+  console.log(JSON.stringify({ repo: data.repo, commit: data.commit, since: data.since || null, baseline: Boolean(baseline), failing: failing.length, summary, tasks }, null, 2));
+  done();
+}
+// --markdown: a PR comment or CI summary
+if (opts.markdown) {
+  console.log(toMarkdown(tasks, { repo: data.repo, since: data.since, baseline }));
+  done();
 }
 
 const out = path.resolve(opts.out);
@@ -186,25 +226,36 @@ const rest = (list) => (list.length > cap ? [dim(`  …and ${n(list.length - cap
 const section = (title, line) => console.log(`\n${bold(title)}  ${line}`);
 const row = (s) => console.log(`  ${s}`);
 
-const high = security.filter((f) => f.severity === 'high').length;
-section('SECURITY', security.length ? `${red(`${high} high`)} · ${yellow(`${security.length - high} medium`)}` : green('nothing found'));
-for (const f of security.slice(0, cap)) row(`${(f.severity === 'high' ? red : yellow)(f.severity.padEnd(6))}  ${f.title}  ${dim(f.where)}`);
-for (const l of rest(security)) console.log(l);
+const sec = data.security.findings;
+const high = sec.filter((f) => f.severity === 'high').length;
+section('SECURITY', sec.length ? `${red(`${high} high`)} · ${yellow(`${sec.length - high} medium`)}` : green('nothing found'));
+for (const f of sec.slice(0, cap)) row(`${(f.severity === 'high' ? red : yellow)(f.severity.padEnd(6))}  ${f.title}  ${dim(f.where)}`);
+for (const l of rest(sec)) console.log(l);
 if (audit.skipped) row(dim(`vulnerable packages not checked: ${audit.skipped}`));
 
-const zLines = zombies.reduce((s, f) => s + f.lines, 0);
-section('ZOMBIE CODE', knipOut.error ? yellow('skipped (Knip failed)') : `${bold(`${n(zLines)} lines`)} in ${plural(zombies.length, 'file')} · ${plural(unusedPackages.length, 'unused package')} · ${plural(deadExports.reduce((s, e) => s + e.names.length, 0), 'dead export')}`);
-for (const f of zombies.slice(0, cap)) row(`${f.path}  ${dim(`${n(f.lines)} lines · ${f.why.toLowerCase()}${f.share >= 0.5 ? ` · ${Math.round(f.share * 100)}% by ${f.agents.join(', ')}` : ''}`)}`);
-for (const l of rest(zombies)) console.log(l);
-if (unusedPackages.length) row(`unused packages: ${unusedPackages.map((p) => p.name).join(', ')}`);
-if (maybe.length) row(`maybe zombie: ${maybe.map((m) => m.url).join(', ')} ${dim('(nothing in the repo links to them)')}`);
+if (data.shortcuts) {
+  const sc = data.shortcuts;
+  const color = (sev) => (sev === 'high' ? red : sev === 'medium' ? yellow : dim);
+  section('SHORTCUTS', sc.length ? `${plural(sc.length, 'place')} this change silences or skips a check` : green('none: no suppressions, skipped or deleted tests'));
+  for (const c of sc.slice(0, cap)) row(`${color(c.severity)(c.severity.padEnd(6))}  ${c.kind}  ${dim(c.line ? `${c.file}:${c.line}` : c.file)}`);
+  for (const l of rest(sc)) console.log(l);
+}
 
+const z = data.zombie;
+const zLines = z.files.reduce((s, f) => s + f.lines, 0);
+section('ZOMBIE CODE', knipOut.error ? yellow('skipped (Knip failed)') : `${bold(`${n(zLines)} lines`)} in ${plural(z.files.length, 'file')} · ${plural(z.packages.length, 'unused package')} · ${plural(z.exports.reduce((s, e) => s + e.names.length, 0), 'dead export')}`);
+for (const f of z.files.slice(0, cap)) row(`${f.path}  ${dim(`${n(f.lines)} lines · ${f.why.toLowerCase()}${f.share >= 0.5 ? ` · ${Math.round(f.share * 100)}% by ${f.agents.join(', ')}` : ''}`)}`);
+for (const l of rest(z.files)) console.log(l);
+if (z.packages.length) row(`unused packages: ${z.packages.map((p) => p.name).join(', ')}`);
+if (z.maybe.length) row(`maybe zombie: ${z.maybe.map((m) => m.url).join(', ')} ${dim('(nothing in the repo links to them)')}`);
+
+const sp = data.sprawl;
 const added = recent.reduce((s, m) => s + m.added, 0), deleted = recent.reduce((s, m) => s + m.deleted, 0);
-section('SPRAWL', added ? `last 3 months: ${n(added)} lines added, ${n(deleted)} deleted ${bold(`(${Math.round((deleted / added) * 100)} deleted per 100 added)`)}` : dim('no commits in the last 3 months'));
-for (const o of data.sprawl.overlaps) row(`${o.libraries.length} ${o.job}: ${o.libraries.map((l) => `${l.name} ${dim(`(${l.files})`)}`).join(', ')}`);
-for (const v of data.sprawl.versions.slice(0, cap)) row(`${v.path}  ${dim(v.original ? `next to ${v.original}` : v.files ? `versioned folder, ${plural(v.files, 'file')}` : 'versioned copy')}`);
-for (const x of data.sprawl.names.slice(0, cap)) row(`${x.name}  ${dim(`defined in ${plural(x.files.length, 'file')}`)}`);
-if (dupes?.length) row(`${plural(dupes.length, 'copy-pasted block')} ${dim(`(${n(dupes.reduce((s, d) => s + d.lines, 0))} lines)`)}`);
+section('SPRAWL', data.since ? dim(`in this change`) : added ? `last 3 months: ${n(added)} lines added, ${n(deleted)} deleted ${bold(`(${Math.round((deleted / added) * 100)} deleted per 100 added)`)}` : dim('no commits in the last 3 months'));
+for (const o of sp.overlaps) row(`${o.libraries.length} ${o.job}: ${o.libraries.map((l) => `${l.name} ${dim(`(${l.files})`)}`).join(', ')}`);
+for (const v of sp.versions.slice(0, cap)) row(`${v.path}  ${dim(v.original ? `next to ${v.original}` : v.files ? `versioned folder, ${plural(v.files, 'file')}` : 'versioned copy')}`);
+for (const x of sp.names.slice(0, cap)) row(`${x.name}  ${dim(`defined in ${plural(x.files.length, 'file')}`)}`);
+if (sp.dupes?.length) row(`${plural(sp.dupes.length, 'copy-pasted block')} ${dim(`(${n(sp.dupes.reduce((s, d) => s + d.lines, 0))} lines)`)}`);
 
 const a = data.architecture;
 section('ARCHITECTURE', [plural(a.cycles.length, 'import cycle'), `${plural(a.big.length, 'file')} over 500 lines`, a.shared.length > 1 && `shared code in ${a.shared.length} folders`, a.deep.length && `${plural(a.deep.length, 'file')} with ../../../ imports`].filter(Boolean).join(' · '));
@@ -212,5 +263,8 @@ for (const c of a.cycles.slice(0, cap)) row(`cycle: ${dim(c.slice(0, 4).join(' �
 for (const b of a.big.slice(0, cap)) row(`${b.file}  ${dim(`${n(b.lines)} lines`)}`);
 
 const safe = tasks.filter((t) => t.safe).length;
-console.log(`\n${bold(`${plural(tasks.length, 'task')}`)} ${dim(`(${n(safe)} safe to automate)`)} · report: ${out}`);
+const fresh = baseline ? tasks.filter((t) => t.new).length : null;
+console.log(`\n${bold(`${plural(tasks.length, 'task')}`)} ${dim(`(${n(safe)} safe to automate${fresh !== null ? `, ${n(fresh)} new since the baseline` : ''})`)} · report: ${out}`);
 console.log(dim('Fix them with your agent: run /zomb-clean in Claude Code, or pipe `zomb --json` to any agent.'));
+if (opts['fail-on']) console.log(failing.length ? red(`✗ ${plural(failing.length, 'finding')} at or above ${opts['fail-on']}${baseline ? ' (new since the baseline)' : ''}`) : green(`✓ nothing at or above ${opts['fail-on']}${baseline ? ' that is new since the baseline' : ''}`));
+process.exit(failing.length ? 1 : 0);

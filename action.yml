@@ -1,0 +1,60 @@
+name: zomb
+description: Health check for AI-written code. Comments on pull requests and fails on new security problems.
+author: Open Dev Society
+branding:
+  icon: shield
+  color: red
+inputs:
+  fail-on:
+    description: Fail on new findings at this level or above (high, medium or low). Leave empty to never fail.
+    default: high
+  comment:
+    description: Post the findings as a pull request comment, updated on every push.
+    default: 'true'
+  path:
+    description: Folder to scan.
+    default: '.'
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Install zomb
+      shell: bash
+      run: npm ci --omit=dev --no-audit --no-fund --prefix "$GITHUB_ACTION_PATH"
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        BASE: ${{ github.event.pull_request.base.sha }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        SCAN_PATH: ${{ inputs.path }}
+      run: |
+        args=("$SCAN_PATH" --markdown)
+        # on a pull request, report only what the PR changed
+        if [ -n "$BASE" ]; then args+=(--since "$BASE"); fi
+        if [ -n "$FAIL_ON" ]; then args+=(--fail-on "$FAIL_ON"); fi
+        set +e
+        node "$GITHUB_ACTION_PATH/src/cli.js" "${args[@]}" > "$RUNNER_TEMP/zomb.md"
+        echo "code=$?" >> "$GITHUB_OUTPUT"
+        cat "$RUNNER_TEMP/zomb.md" >> "$GITHUB_STEP_SUMMARY"
+    - name: Comment on the pull request
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      # pull requests from forks get a read-only token; the gate below still runs
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+      run: |
+        id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[] | select(.body | contains("<!-- zomb -->")) | .id' | tail -n1)
+        if [ -n "$id" ]; then
+          gh api -X PATCH "repos/$REPO/issues/comments/$id" -F "body=@$RUNNER_TEMP/zomb.md" > /dev/null
+        else
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/zomb.md"
+        fi
+    - name: Gate
+      shell: bash
+      run: exit ${{ steps.scan.outputs.code }}

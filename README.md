@@ -12,22 +12,62 @@ npx zomb path/to/repo --out report.html
 It prints a summary, writes a single HTML report, and your code never leaves your machine.
 
 ```bash
-zomb --all     # every finding in the terminal, not just the top 5
-zomb --json    # an ordered to-do list for an AI agent or CI
+zomb --all                # every finding in the terminal, not just the top 5
+zomb --json               # an ordered to-do list for an AI agent or CI
+zomb --since main         # only what your branch changed, plus the shortcuts it took
+zomb --since HEAD         # only your uncommitted work
+```
+
+## Shortcuts
+
+With `--since`, zomb also reads the diff for the ways agents make checks pass without fixing anything: new `@ts-ignore` and `eslint-disable`, `.skip` and `.only` tests, deleted tests and assertions, branches on `NODE_ENV === 'test'`, `as any`, and empty `catch` blocks.
+
+## Block new problems in CI
+
+Existing debt shouldn't fail every build. Save it once as a baseline, commit it, and only new findings fail:
+
+```bash
+zomb --save-baseline               # writes .zomb/baseline.json
+zomb --fail-on high                # exit 1 on new high findings (also: medium, low)
+zomb --since main --markdown       # a PR comment
+```
+
+On GitHub, the Action comments on every pull request (and updates that comment on each push) and fails the check on new findings:
+
+```yaml
+name: zomb
+on: pull_request
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  zomb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # zomb compares the PR with where it branched off
+      - run: npm ci           # Knip needs your dependencies
+      - uses: Open-Dev-Society/zomb@main
+        with:
+          fail-on: high
 ```
 
 ## Let your agent fix it
 
-`zomb --json` returns tasks like `{ area, severity, action, title, where, how, safe }`. `safe: true` marks mechanical clean-up (delete a dead file, uninstall an unused package) that a build can verify. Everything else needs a human yes.
+`zomb --json` returns tasks like `{ area, severity, action, title, where, how, safe, new }`. `safe: true` marks mechanical clean-up (delete a dead file, uninstall an unused package) that a build can verify. Everything else needs a human yes.
 
-In Claude Code, install the plugin and run `/zomb-clean`:
+In Claude Code, install the plugin:
 
 ```bash
 claude plugin marketplace add Open-Dev-Society/zomb
 claude plugin install zomb@zomb
 ```
 
-`/zomb-clean` works on a new branch. It fixes security issues first, then deletes zombie code in small batches, running your typecheck, tests and build after each batch and undoing any batch that breaks something. It asks before anything that changes how the code is organised, and ends with a before/after and the things only you can do (like rotating a leaked key). Any other agent can follow [skills/zomb-clean/SKILL.md](skills/zomb-clean/SKILL.md).
+- **`/zomb-guard`** checks the agent's own change before it says a task is done: new security holes, dead code it left behind, and shortcuts. It fixes what it introduced and ends with `zomb: clean` or what's left and why.
+- **`/zomb-clean`** cleans the whole repo on a new branch. It fixes security issues first, then deletes zombie code in small batches, running your typecheck, tests and build after each batch and undoing any batch that breaks something. It asks before anything that changes how the code is organised, and ends with a before/after and the things only you can do (like rotating a leaked key).
+
+Any other agent can follow [skills/zomb-guard/SKILL.md](skills/zomb-guard/SKILL.md) and [skills/zomb-clean/SKILL.md](skills/zomb-clean/SKILL.md).
 
 ## What it checks
 

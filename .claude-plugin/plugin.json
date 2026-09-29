@@ -1,8 +1,10 @@
 {
   "name": "zomb",
   "version": "0.0.1",
-  "description": "A health check for AI-written codebases. /zomb-clean fixes security holes, deletes zombie code and unused packages, and checks the build after every step.",
-  "author": { "name": "Open Dev Society" },
+  "description": "A health check for AI-written codebases. /zomb-guard checks an agent's change before it says done; /zomb-clean fixes security holes and deletes zombie code, checking the build after every step.",
+  "author": {
+    "name": "Open Dev Society"
+  },
   "homepage": "https://github.com/Open-Dev-Society/zomb",
   "license": "MIT"
 }

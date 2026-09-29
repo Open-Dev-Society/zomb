@@ -16,6 +16,13 @@ function securitySection({ findings, audit, middlewareAuth, middleware, inTests 
   ${notes.map((t) => `<p class="note">${esc(t)}</p>`).join('')}</section>`;
 }
 
+function shortcutsSection(shortcuts) {
+  if (!shortcuts) return '';
+  return `<section id="shortcuts"><h2>Shortcuts</h2>
+  <p class="muted">Places this change silences or skips a check instead of fixing what it found: suppressions, skipped or focused tests, deleted tests, special-casing the test environment.</p>
+  ${shortcuts.length ? `<ul class="items">${shortcuts.map((c) => `<li><span class="sev ${c.severity}">${c.severity}</span><div><b>${esc(c.kind)}</b> ${code(c.line ? `${c.file}:${c.line}` : c.file)}</div></li>`).join('')}</ul>` : '<p>None found.</p>'}</section>`;
+}
+
 function zombieSection({ files, packages, exports, maybe }, knipError) {
   if (knipError) return `<section id="zombie"><h2>Zombie code</h2><p class="note">Skipped: ${esc(knipError)}</p></section>`;
   const lines = files.reduce((s, f) => s + f.lines, 0);
@@ -63,7 +70,7 @@ function architectureSection({ cycles, big, shared, deep, naming }) {
   </section>`;
 }
 
-export function renderReport({ repo, commit, date, files, lines, knipError, zombie, security, sprawl, architecture }) {
+export function renderReport({ repo, commit, date, files, lines, knipError, zombie, security, sprawl, architecture, shortcuts, since }) {
   const high = security.findings.filter((f) => f.severity === 'high').length;
   const zLines = zombie.files.reduce((s, f) => s + f.lines, 0);
   const added = sprawl.recent.reduce((s, m) => s + m.added, 0);
@@ -88,7 +95,7 @@ i.add{background:var(--ink2)}i.del{background:var(--good)}.legend{font-size:12px
 footer{margin-top:64px;color:var(--muted);font-size:13px}footer p{margin:0 0 8px}
 @media (max-width:700px){.cards{grid-template-columns:1fr 1fr}h1{font-size:30px}}
 </style></head><body><main>
-<header><p class="muted">zomb · commit ${esc(commit)} · ${esc(date)}</p><h1>${esc(repo)}</h1><p class="muted">${n(files)} JS/TS files, ${n(lines)} lines, checked for security problems, zombie code, sprawl and architecture.</p></header>
+<header><p class="muted">zomb · commit ${esc(commit)} · ${esc(date)}</p><h1>${esc(repo)}</h1><p class="muted">${n(files)} JS/TS files, ${n(lines)} lines, checked for security problems, zombie code, sprawl and architecture.${since ? ` Showing only what changed since <code>${esc(since)}</code>.` : ''}</p></header>
 <div class="cards">
 ${card('security', n(security.findings.length), 'security issues', high ? `${n(high)} high` : 'none high', high ? 'bad' : '')}
 ${card('zombie', knipError ? '–' : n(zLines), 'lines of zombie code', knipError ? 'skipped' : `${plural(zombie.files.length, 'file')} · ${plural(zombie.packages.length, 'unused package')}`)}
@@ -96,6 +103,7 @@ ${card('sprawl', added ? n(Math.round((deleted / added) * 100)) : '–', 'delete
 ${card('architecture', n(architecture.cycles.length), 'import cycles', `${plural(architecture.big.length, 'file')} over 500 lines`)}
 </div>
 ${securitySection(security)}
+${shortcutsSection(shortcuts)}
 ${zombieSection(zombie, knipError)}
 ${sprawlSection(sprawl)}
 ${architectureSection(architecture)}

@@ -58,6 +58,34 @@ test('zomb --json finds every planted mistake', () => {
     assert.equal(tasks[0].severity, 'high');
     assert.ok(summary.security.high >= 5);
     assert.ok(tasks.filter((t) => t.safe).every((t) => t.area === 'zombie'), 'only zombie clean-up is safe to automate');
+
+    // The gate: save a baseline, then only new problems fail.
+    const run = (...args) => {
+      try {
+        return { code: 0, out: execFileSync(process.execPath, [cli, dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) };
+      } catch (e) {
+        return { code: e.status, out: e.stdout };
+      }
+    };
+    assert.equal(run('--fail-on', 'high', '--json').code, 1, 'known problems fail before there is a baseline');
+    run('--save-baseline');
+    assert.equal(run('--fail-on', 'high', '--json').code, 0, 'known problems pass once they are in the baseline');
+
+    // A change that adds a new key and takes shortcuts.
+    writeFileSync(path.join(dir, 'lib/github.ts'), `export const token = "${['ghp', 'Zq9rT4vWxyKm2Lp8Nc1Hs6Kd3Vb7Qe5Tr0Uy'].join('_')}";\n`);
+    writeFileSync(path.join(dir, 'lib/db.ts'), files['lib/db.ts'] + '// @ts-ignore\nexport const n: number = "1";\n');
+    mkdirSync(path.join(dir, 'test'), { recursive: true });
+    writeFileSync(path.join(dir, 'test/db.test.ts'), "import { findUser } from '../lib/db';\nit.only('finds', () => { expect(findUser).toBeDefined() });\n");
+    const gated = run('--since', 'HEAD', '--fail-on', 'high', '--json');
+    const diffTasks = JSON.parse(gated.out).tasks;
+    const diffTitles = diffTasks.map((t) => t.title);
+    assert.equal(gated.code, 1, 'a new key fails the gate');
+    assert.ok(diffTitles.includes('GitHub token in the code'));
+    assert.ok(diffTitles.includes('Silences the type checker'));
+    assert.ok(diffTitles.includes('Focuses one test, so CI silently skips the rest'));
+    assert.ok(!diffTitles.includes('Stripe live key in the code'), 'unchanged files stay out of a --since report');
+    assert.ok(diffTasks.find((t) => t.title === 'GitHub token in the code').new);
+    assert.match(run('--since', 'HEAD', '--markdown').out, /new finding/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

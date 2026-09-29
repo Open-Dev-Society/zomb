@@ -118,3 +118,53 @@ test('env files and ranking', () => {
   const f = securityFindings({ secrets: [], envFiles: [], publicVars: [], dangerous: [{ severity: 'medium', kind: 'eval', file: 'a.ts', line: 1 }], openRoutes: [], audit: { top: [{ name: 'next', severity: 'critical', title: 'SSRF', fix: true }], counts: { critical: 1, high: 0 } } });
   assert.deepEqual(f.map((x) => x.severity), ['high', 'medium']);
 });
+
+test('shortcuts: suppressions, skipped and focused tests, removed tests, test-env branches', async () => {
+  const { shortcuts, removedImports } = await import('../src/diff.js');
+  const diff = [
+    'diff --git a/src/pay.ts b/src/pay.ts', '--- a/src/pay.ts', '+++ b/src/pay.ts', '@@ -10,0 +11,4 @@',
+    '+  // @ts-ignore', '+  const total = (cart as any).sum;', "+  if (process.env.NODE_ENV === 'test') return 0;", '+  // this used to be as any',
+    'diff --git a/src/pay.test.ts b/src/pay.test.ts', '--- a/src/pay.test.ts', '+++ b/src/pay.test.ts', '@@ -3,4 +3,1 @@',
+    "-it('rounds to cents', () => { expect(round(1.005)).toBe(1.01) });", "-it('rejects negatives', () => { expect(() => pay(-1)).toThrow() });",
+    "+it.only('pays', () => { expect(pay(1)).toBe(1) });",
+    'diff --git a/src/page.tsx b/src/page.tsx', '--- a/src/page.tsx', '+++ b/src/page.tsx', '@@ -1,1 +0,0 @@', "-import moment from 'moment';",
+  ].join('\n');
+  const found = shortcuts(diff, ['src/old.test.ts', 'src/old.ts']).map((s) => `${s.severity} ${s.kind} ${s.file}${s.line ? `:${s.line}` : ''}`);
+  assert.deepEqual(found, [
+    'medium Silences the type checker src/pay.ts:11',
+    'low Casts to any src/pay.ts:12',
+    'medium Special-cases the test environment src/pay.ts:13',
+    'high Focuses one test, so CI silently skips the rest src/pay.test.ts:3',
+    'medium Removes 1 test src/pay.test.ts',
+    'medium Deletes a test file src/old.test.ts',
+  ]);
+  assert.deepEqual([...removedImports(diff)], ['moment']);
+});
+
+test('fingerprints ignore line numbers and counts; markdown shows only new findings', async () => {
+  const { fingerprint, toMarkdown } = await import('../src/tasks.js');
+  const t = (title, where) => ({ area: 'security', action: 'fix', severity: 'high', title, where });
+  assert.equal(fingerprint(t('Stripe live key in the code', 'lib/pay.ts:12')), fingerprint(t('Stripe live key in the code', 'lib/pay.ts:40')));
+  assert.equal(fingerprint(t('Delete a.ts (301 lines)', 'a.ts')), fingerprint(t('Delete a.ts (310 lines)', 'a.ts')));
+  assert.notEqual(fingerprint(t('Stripe live key in the code', 'lib/pay.ts:12')), fingerprint(t('Stripe live key in the code', 'lib/other.ts:12')));
+  const md = toMarkdown([{ ...t('New key', 'x.ts:1'), new: true }, { ...t('Old key', 'y.ts:1'), new: false }], { baseline: true, since: 'main' });
+  assert.match(md, /1 new finding in this change/);
+  assert.ok(md.includes('New key') && !md.includes('Old key'));
+  assert.match(toMarkdown([], { since: 'main' }), /nothing new/);
+});
+
+test('scopeTo keeps only what the change touched', async () => {
+  const { scopeTo } = await import('../src/diff.js');
+  const data = {
+    zombie: { files: [{ path: 'a.ts' }, { path: 'b.ts' }], packages: [{ name: 'moment' }, { name: 'lodash' }], exports: [], maybe: [] },
+    security: { findings: [{ files: ['a.ts'] }, { files: ['c.ts'] }, { package: true, files: [] }] },
+    sprawl: { dupes: [], names: [], versions: [], overlaps: [{ job: 'x' }] },
+    architecture: { cycles: [['a.ts', 'z.ts'], ['q.ts', 'r.ts']], big: [], deep: [], shared: ['lib'], naming: [] },
+  };
+  const s = scopeTo(data, { changed: new Set(['a.ts']), diff: "-import moment from 'moment';" });
+  assert.deepEqual(s.zombie.files, [{ path: 'a.ts' }]);
+  assert.deepEqual(s.zombie.packages, [{ name: 'moment' }]);
+  assert.equal(s.security.findings.length, 1);
+  assert.deepEqual(s.architecture.cycles, [['a.ts', 'z.ts']]);
+  assert.deepEqual(s.sprawl.overlaps, []);
+});

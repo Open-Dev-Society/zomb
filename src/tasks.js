@@ -2,12 +2,33 @@
 // `safe` = mechanical and checkable by a build: an agent may do it without asking. Everything else needs a human yes.
 const plural = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
 
-export function toTasks({ security, zombie, sprawl, architecture }) {
+export function toTasks({ security, zombie, sprawl, architecture, shortcuts = [] }) {
   const tasks = [];
   const add = (t) => tasks.push({ id: tasks.length + 1, ...t });
 
-  for (const f of security.findings)
-    add({ area: 'security', severity: f.severity, action: 'fix', title: f.title, where: f.where, how: f.detail || 'Fix the flagged line so the input can never reach it unescaped.', safe: false });
+  for (const f of security.findings) {
+    if (!f.package) {
+      add({ area: 'security', severity: f.severity, action: 'fix', title: f.title, where: f.where, how: f.detail || 'Fix the flagged line so the input can never reach it unescaped.', safe: false, ...(f.key && { key: f.key }) });
+      continue;
+    }
+    // one task per vulnerable package: each is its own fix
+    for (const a of security.audit.top)
+      add({ area: 'security', severity: 'high', action: 'upgrade', title: `Upgrade ${a.name}: ${a.title}`, where: `${a.name} (${a.severity}${a.direct ? ', direct dependency' : ''})`, how: a.fix ? 'Run npm audit fix (never --force), then the build and tests.' : 'No fixed version yet: check the advisory for a workaround, or replace the package.', safe: false });
+  }
+
+  // Shortcuts an agent took in this change to make a check pass. Fix the cause, then remove the shortcut.
+  const SHORTCUT_HOW = {
+    'Focuses one test, so CI silently skips the rest': 'Remove .only so the whole suite runs again.',
+    'Skips a test': 'Make the test pass, or delete it on purpose with a reason in the commit message.',
+    'Silences the type checker': 'Fix the type error instead of ignoring it.',
+    'Turns off a lint rule': 'Fix what the rule flagged instead of disabling it.',
+    'Special-cases the test environment': 'Code must behave the same under test; remove the branch and fix the real behaviour.',
+    'Casts to any': 'Give it a real type.',
+    'Swallows errors in an empty catch': 'Handle the error, or at least log it.',
+    'Deletes a test file': 'Restore it, or confirm the behaviour it tested is gone on purpose.',
+  };
+  for (const c of shortcuts)
+    add({ area: 'shortcuts', severity: c.severity, action: 'undo-shortcut', title: c.kind, where: c.line ? `${c.file}:${c.line}` : c.file, how: SHORTCUT_HOW[c.kind] || 'Restore the tests unless the behaviour they covered was removed on purpose.', safe: false });
 
   for (const f of zombie.files) add({ area: 'zombie', severity: 'low', action: 'delete-file', title: `Delete ${f.path} (${plural(f.lines, 'line')})`, where: f.path, how: `${f.why}. Delete the file, then run the build and tests.`, safe: true });
   if (zombie.packages.length)
@@ -29,4 +50,23 @@ export function toTasks({ security, zombie, sprawl, architecture }) {
 
   const rank = { high: 0, medium: 1, low: 2 };
   return tasks.sort((a, b) => rank[a.severity] - rank[b.severity] || a.id - b.id).map((t, i) => ({ ...t, id: i + 1 }));
+}
+
+// Stable identity for a task across runs: line numbers and counts drift as code moves, the problem doesn't.
+// `key` pins findings whose location is a list that can grow (a browser-exposed variable used in more files)
+export const fingerprint = (t) => [t.area, t.action, t.title.replace(/\d[\d,.]*/g, '#'), t.key || t.where.replace(/:\d+(-\d+)?/g, '')].join('|');
+
+// Markdown for a PR comment or a CI job summary.
+export function toMarkdown(tasks, { repo, since, baseline }) {
+  const icon = { high: '🔴', medium: '🟠', low: '⚪' };
+  const shown = baseline ? tasks.filter((t) => t.new) : tasks;
+  const scope = since ? ` in this change (since \`${/^[0-9a-f]{40}$/.test(since) ? since.slice(0, 7) : since}\`)` : '';
+  // the hidden marker lets the GitHub Action find and update its own comment instead of posting a new one each push
+  if (!shown.length) return `<!-- zomb -->\n### zomb: nothing new${scope} ✅\n`;
+  const count = (sev) => shown.filter((t) => t.severity === sev).length;
+  const head = `<!-- zomb -->\n### zomb: ${plural(shown.length, baseline ? 'new finding' : 'finding')}${scope}\n\n${[count('high') && `${count('high')} high`, count('medium') && `${count('medium')} medium`, count('low') && `${count('low')} low`].filter(Boolean).join(' · ')}\n`;
+  const rows = shown.slice(0, 30).map((t) => `| ${icon[t.severity]} ${t.severity} | ${t.area} | ${t.title.replace(/\|/g, '\\|')} | \`${t.where.replace(/`/g, "'")}\` |`);
+  const more = shown.length > 30 ? `\n…and ${shown.length - 30} more. Run \`zomb\` locally for the full report.\n` : '';
+  const safe = shown.filter((t) => t.safe).length;
+  return `${head}\n| | Area | Finding | Where |\n|---|---|---|---|\n${rows.join('\n')}\n${more}\n${safe ? `${plural(safe, 'finding')} can be fixed automatically: run \`/zomb-clean\` in Claude Code.\n` : ''}`;
 }
