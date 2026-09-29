@@ -40,7 +40,7 @@ const TEST = /(^|\/)(__tests__|__mocks__|tests?|e2e|cypress|playwright|fixtures?
 // Files a framework or runtime loads by name, so having no importer (or only test importers) doesn't make them dead.
 const ENTRY = /(^|\/)(page|layout|route|loading|error|not-found|template|default|middleware|instrumentation|global-error|opengraph-image|twitter-image|icon|apple-icon|sitemap|robots|manifest)\.[cm]?[jt]sx?$|(^|\/)(index|main|server|cli|app)\.[cm]?[jt]sx?$|(^|\/)(bin|scripts|pages)\//;
 export const isTest = (f) => TEST.test(f);
-export const isEntry = (f) => ENTRY.test(f);
+const isEntry = (f) => ENTRY.test(f);
 
 // Files that only tests (or other test-only files) import: their tests keep them alive, nothing else does.
 // parsed: Map(path -> { imports:[paths] }); keep: files known to be live (e.g. started by path from action.yml)

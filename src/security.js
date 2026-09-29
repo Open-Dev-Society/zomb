@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { isTest } from './score.js';
 
 // ponytail: high-confidence provider patterns only; add gitleaks' rule set if teams need broader coverage
-export const SECRET_PATTERNS = [
+const SECRET_PATTERNS = [
   ['Private key', /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/g],
   ['AWS access key', /\bAKIA[0-9A-Z]{16}\b/g],
   ['GitHub token', /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{50,})/g],
@@ -23,7 +23,7 @@ export const SECRET_PATTERNS = [
 const PLACEHOLDER = /example|xxxx|your[_-]?|dummy|fake|sample|placeholder|<|\*\*\*|changeme|:(password|pass|secret|postgres|root|admin|user)@|\$\{|\{\{|%s|abcdefgh|12345678|0123456/i;
 
 // Show just enough of a secret to find it, never enough to use it: the report may get shared.
-export const mask = (s) => `${s.slice(0, Math.min(8, Math.floor(s.length / 4)))}…`;
+const mask = (s) => `${s.slice(0, Math.min(8, Math.floor(s.length / 4)))}…`;
 
 // text -> [{ kind, line, preview }]
 export function findSecrets(text) {
@@ -84,7 +84,7 @@ export function routeFacts(file, src) {
 }
 export const hasAuthSignal = (src) => AUTH_SIGNAL.test(src);
 // app/api/users/[id]/route.ts -> /api/users/[id]
-export const apiUrl = (file) => file.replace(/^(.*\/)?(app|pages)\//, '/').replace(/\/?route\.[cm]?[jt]sx?$|\.[cm]?[jt]sx?$/, '').replace(/\/\([^/]+\)/g, '') || '/';
+const apiUrl = (file) => file.replace(/^(.*\/)?(app|pages)\//, '/').replace(/\/?route\.[cm]?[jt]sx?$|\.[cm]?[jt]sx?$/, '').replace(/\/\([^/]+\)/g, '') || '/';
 
 // All findings, worst first: [{ severity:'high'|'medium', title, where, detail }]
 export function securityFindings({ secrets, envFiles, publicVars, dangerous, openRoutes, audit }) {
