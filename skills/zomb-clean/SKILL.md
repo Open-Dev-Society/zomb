@@ -42,12 +42,9 @@ Fix what code can fix. For each one, change the code, run the checks, commit.
 
 ## 4. Safe clean-up (tasks with `safe: true`)
 
-Do these without asking, in small batches of up to 10 files:
+Run `zomb fix` (commit your security fixes first: it refuses to run on uncommitted work). It deletes dead files, removes dead exports and uninstalls unused packages in batches, runs the project's checks after each batch, undoes any batch that breaks a check, retries items one at a time, and commits on a `zomb/fix-…` branch. Read its output: anything it `kept` is not dead after all, and anything it `left for you` (scripts you may run by hand, tooling packages configs load by name, uncommitted files) needs the user's call.
 
-1. Apply the batch: delete the files, uninstall the packages with the project's package manager, or remove the unused exports.
-2. Run the checks.
-3. If a check that passed before now fails, undo that batch with `git checkout -- .` (and reinstall if you removed packages), then retry the items one at a time. An item that still breaks something is not dead: leave it and report it.
-4. Commit the batch, e.g. `zomb-clean: delete 8 unused files (1,240 lines)`.
+If `zomb fix` is not available, do the same by hand: batches of up to 10, checks after each, undo and retry one by one on failure, one commit per batch.
 
 ## 5. Needs a yes (every other task)
 

@@ -11,6 +11,7 @@ import { scanRepo, npmAudit, openRoute, hasAuthSignal, securityFindings } from '
 import { renderReport } from './report.js';
 import { toTasks, fingerprint, toMarkdown } from './tasks.js';
 import { render, spinner } from './terminal.js';
+import { fix } from './fix.js';
 import { changesSince, scopeTo, shortcuts } from './diff.js';
 
 const { values: opts, positionals } = parseArgs({
@@ -23,8 +24,12 @@ const { values: opts, positionals } = parseArgs({
     since: { type: 'string' },
     'fail-on': { type: 'string' },
     'save-baseline': { type: 'boolean', default: false },
+    'dry-run': { type: 'boolean', default: false },
+    'no-checks': { type: 'boolean', default: false },
   },
 });
+// `zomb fix [path]` does the safe clean-up; plain `zomb [path]` reports
+const command = positionals[0] === 'fix' ? positionals.shift() : 'scan';
 const LEVELS = { high: ['high'], medium: ['high', 'medium'], low: ['high', 'medium', 'low'] };
 const exec = promisify(execFile);
 const sh = (cmd, args, cwd) => exec(cmd, args, { cwd, maxBuffer: 512 * 1024 * 1024 }).then((r) => r.stdout);
@@ -131,7 +136,12 @@ const zombieFiles = [...unused, ...onlyTests].filter((f) => !refs.get(f) && !liv
 spin.stop();
 const byAgent = await authorship(zombieFiles, agentOf);
 const zombies = zombieFiles
-  .map((f) => ({ path: f, lines: parsed.get(f).lines, why: unused.has(f) ? 'Nothing imports or names it' : 'Only its own tests import it', ...byAgent.get(f) }))
+  .map((f) => {
+    // a standalone script nothing references is probably run by hand (node scripts/seed.mjs): ask, don't delete
+    const script = /(^|\/)(scripts?|bin|tools)\//.test(f) || (!f.includes('/') && /\.[cm]?js$/.test(f));
+    const why = script ? 'A standalone script nothing references: maybe you run it by hand' : unused.has(f) ? 'Nothing imports or names it' : 'Only its own tests import it';
+    return { path: f, lines: parsed.get(f).lines, why, script, committed: tracked.has(f), ...byAgent.get(f) };
+  })
   .sort((a, b) => b.lines - a.lines);
 const unusedPackages = knipOut.issues.flatMap((i) => [...i.dependencies, ...i.devDependencies].map((d) => ({ name: d.name, file: i.file, dev: i.devDependencies.includes(d) })));
 const deadExports = knipOut.issues
@@ -183,6 +193,8 @@ if (opts.since) {
   log(`reporting only the ${change.changed.size} files changed since ${opts.since}`);
 }
 const tasks = toTasks(data);
+
+if (command === 'fix') process.exit(await fix({ root, data, dryRun: opts['dry-run'], noChecks: opts['no-checks'], color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR }));
 
 // Baseline: the findings you already have. With one saved, only new findings fail --fail-on.
 const baselinePath = path.join(root, '.zomb', 'baseline.json');

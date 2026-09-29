@@ -30,7 +30,12 @@ export function toTasks({ security, zombie, sprawl, architecture, shortcuts = []
   for (const c of shortcuts)
     add({ area: 'shortcuts', severity: c.severity, action: 'undo-shortcut', title: c.kind, where: c.line ? `${c.file}:${c.line}` : c.file, how: SHORTCUT_HOW[c.kind] || 'Restore the tests unless the behaviour they covered was removed on purpose.', safe: false });
 
-  for (const f of zombie.files) add({ area: 'zombie', severity: 'low', action: 'delete-file', title: `Delete ${f.path} (${plural(f.lines, 'line')})`, where: f.path, how: `${f.why}. Delete the file, then run the build and tests.`, safe: true });
+  for (const f of zombie.files)
+    add(
+      f.script
+        ? { area: 'zombie', severity: 'low', action: 'review', title: `Do you still run ${f.path}?`, where: f.path, how: `${f.why}. Delete it if not.`, safe: false }
+        : { area: 'zombie', severity: 'low', action: 'delete-file', title: `Delete ${f.path} (${plural(f.lines, 'line')})`, where: f.path, how: `${f.why}. Delete the file, then run the build and tests.`, safe: true },
+    );
   if (zombie.packages.length)
     add({ area: 'zombie', severity: 'low', action: 'uninstall', title: `Uninstall ${plural(zombie.packages.length, 'unused package')}`, where: zombie.packages.map((p) => p.name).join(' '), how: 'Nothing imports them. Remove them with your package manager, then run the build.', safe: true });
   for (const e of zombie.exports) add({ area: 'zombie', severity: 'low', action: 'remove-exports', title: `Remove ${plural(e.names.length, 'unused export')} from ${e.file}`, where: e.file, how: `Nothing imports ${e.names.join(', ')}. Delete them, or drop the export keyword if the file uses them itself.`, safe: true });

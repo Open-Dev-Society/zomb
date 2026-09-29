@@ -97,7 +97,7 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
     for (const [dir, list] of cap(sorted)) {
       const total = list.reduce((s, f) => s + f.lines, 0);
       L.push(row(dim(dir), dim(`${plural(list.length, 'file')}  ${n(total).padStart(6)}`)));
-      for (const f of cap(list)) L.push(row(`${f.path.slice(dir === './' ? 0 : dir.length)}${f.why.startsWith('Only') ? dim('  tests only') : ''}`, n(f.lines).padStart(6), 4));
+      for (const f of cap(list)) L.push(row(`${f.path.slice(dir === './' ? 0 : dir.length)}${f.script ? yellow('  run by hand?') : f.why.startsWith('Only') ? dim('  tests only') : ''}`, n(f.lines).padStart(6), 4));
       if (!all && list.length > 5) L.push(dim(`    …and ${n(list.length - 5)} more`));
     }
     L.push(...more(sorted));
@@ -135,7 +135,8 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
   const safe = tasks.filter((t) => t.safe).length;
   const fresh = baseline ? tasks.filter((t) => t.new).length : null;
   L.push('', rule('NEXT', dim(`${plural(tasks.length, 'task')}`)));
-  if (tasks.length) L.push(row(`${cyan('/zomb-clean')} ${dim('in Claude Code')}`, dim(`${n(safe)} safe to automate`)));
+  if (safe) L.push(row(`${cyan('zomb fix')} ${dim('deletes the dead code on a branch, checking your build')}`, dim(`${n(safe)} safe`)));
+  if (tasks.length - safe) L.push(row(`${cyan('/zomb-clean')} ${dim('in Claude Code for the rest')}`, dim(`${n(tasks.length - safe)} need a look`)));
   if (fresh !== null) L.push(row(dim(`${plural(fresh, 'finding')} new since the baseline`)));
   if (out) L.push(row(`${dim('report')} ${fit(out, W - 10)}`));
   if (failOn) L.push(row(failing.length ? red(`✗ ${plural(failing.length, 'finding')} at or above ${failOn}${baseline ? ', new since the baseline' : ''}`) : green(`✓ nothing ${baseline ? 'new ' : ''}at or above ${failOn}`)));

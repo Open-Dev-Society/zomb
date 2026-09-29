@@ -18,6 +18,17 @@ zomb --since main         # only what your branch changed, plus the shortcuts it
 zomb --since HEAD         # only your uncommitted work
 ```
 
+## Clean up automatically
+
+```bash
+zomb fix --dry-run     # show what it would remove
+zomb fix               # do it, on a new branch
+```
+
+`zomb fix` deletes dead files, removes dead exports and uninstalls unused packages. It needs no AI and no API key. First it runs your own checks (typecheck, lint, test, build) and keeps the ones that pass as its gates. Then it works in batches: after each batch it runs those checks, and if one fails it undoes the batch and retries each item on its own, keeping only what's safe. Every batch is committed on a `zomb/fix-<date>` branch for you to review.
+
+It refuses to run on uncommitted work, and it never touches scripts you may run by hand, tooling packages that configs load by name (ESLint and Prettier configs, `@types/*`, PostCSS and Tailwind plugins), or files that aren't committed yet. It lists those for you instead.
+
 ## Shortcuts
 
 With `--since`, zomb also reads the diff for the ways agents make checks pass without fixing anything: new `@ts-ignore` and `eslint-disable`, `.skip` and `.only` tests, deleted tests and assertions, branches on `NODE_ENV === 'test'`, `as any`, and empty `catch` blocks.
