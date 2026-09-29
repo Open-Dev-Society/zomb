@@ -2,7 +2,8 @@
 const ANSI = /\x1b\[[0-9;]*m/g;
 export const visible = (s) => String(s).replace(ANSI, '').length;
 
-export function render(data, tasks, { width = 80, color = true, all = false, audit = {}, knipError, recent = [], out, failing = [], failOn, baseline } = {}) {
+// One look for every zomb command: colors, badges, section rules, a header frame, and rows that fit the window.
+export function ui({ width = 80, color = true, all = false } = {}) {
   // capped at 80: on a wide window, numbers pushed far right are hard to match to their file
   const W = Math.max(48, Math.min(width - 1, 80));
   const paint = (code) => (s) => (color ? `\x1b[${code}m${s}\x1b[0m` : String(s));
@@ -10,8 +11,6 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
   const badge = { high: paint('1;41;97'), medium: paint('1;43;30'), low: paint('2;7') };
   const n = (x) => x.toLocaleString('en-US');
   const plural = (k, word) => `${n(k)} ${word}${k === 1 ? '' : 's'}`;
-  const cap = (list, k = 5) => (all ? list : list.slice(0, k));
-
   // a path that must fit in `w` columns loses its start, never its file name
   const fit = (s, w) => (visible(s) <= w ? s : `…${s.slice(-(w - 1))}`);
   // left text + right text on one line, left shortened to make room
@@ -33,8 +32,20 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
     }
     return [...lines, cur];
   };
-  const rule = (title, right = '') => `${bold(title)} ${dim('─'.repeat(Math.max(W - visible(title) - visible(right) - 2, 1)))} ${right}`;
+  const rule = (title, right = '') => `${bold(title)} ${dim('─'.repeat(Math.max(W - visible(title) - visible(right) - (right ? 2 : 1), 1)))}${right ? ` ${right}` : ''}`;
   const more = (list, k = 5) => (!all && list.length > k ? [dim(`  …and ${n(list.length - k)} more  (zomb --all)`)] : []);
+  // the rounded header box: a title line with something on the right, then rows under a divider
+  const frame = (title, meta = '', rows = []) => {
+    const line = (s) => `${dim('│')} ${s}${' '.repeat(Math.max(W - 4 - visible(s), 0))} ${dim('│')}`;
+    const top = visible(title) + visible(meta) + 2 <= W - 4 ? `${title}${' '.repeat(W - 4 - visible(title) - visible(meta))}${meta}` : title;
+    return [dim(`╭${'─'.repeat(W - 2)}╮`), line(top), ...(rows.length ? [dim(`├${'─'.repeat(W - 2)}┤`), ...rows.map(line)] : []), dim(`╰${'─'.repeat(W - 2)}╯`)];
+  };
+  return { W, paint, bold, dim, red, yellow, green, cyan, badge, n, plural, fit, row, wrap, rule, more, frame };
+}
+
+export function render(data, tasks, { width = 80, color = true, all = false, audit = {}, knipError, recent = [], out, failing = [], failOn, baseline } = {}) {
+  const { W, bold, dim, red, yellow, green, cyan, badge, n, plural, fit, row, wrap, rule, more, frame } = ui({ width, color, all });
+  const cap = (list, k = 5) => (all ? list : list.slice(0, k));
 
   const L = [];
   const sec = data.security.findings;
@@ -46,7 +57,6 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
   const added = recent.reduce((s, m) => s + m.added, 0), deleted = recent.reduce((s, m) => s + m.deleted, 0);
 
   // ── header: what was scanned, and one line per area
-  const box = (s) => `${dim('│')} ${s}${' '.repeat(Math.max(W - 4 - visible(s), 0))} ${dim('│')}`;
   const dot = (tone) => ({ bad: red('●'), warn: yellow('●'), ok: green('●') })[tone];
   const summary = [
     ['security', sec.length ? `${high ? `${n(high)} high` : ''}${high && sec.length - high ? ' · ' : ''}${sec.length - high ? `${n(sec.length - high)} medium` : ''}` : 'nothing found', high ? 'bad' : sec.length ? 'warn' : 'ok'],
@@ -57,11 +67,7 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
   ];
   const title = `${bold('zomb')}  ${data.repo}`;
   const meta = dim(`${n(data.files)} files · ${n(data.lines)} lines${data.since ? ` · since ${/^[0-9a-f]{40}$/.test(data.since) ? data.since.slice(0, 7) : data.since}` : ''}`);
-  L.push(dim(`╭${'─'.repeat(W - 2)}╮`));
-  L.push(box(visible(title) + visible(meta) + 2 <= W - 4 ? `${title}${' '.repeat(W - 4 - visible(title) - visible(meta))}${meta}` : title));
-  L.push(dim(`├${'─'.repeat(W - 2)}┤`));
-  for (const [label, value, tone] of summary) L.push(box(`${dot(tone)} ${label.padEnd(14)}${fit(value, W - 21)}`));
-  L.push(dim(`╰${'─'.repeat(W - 2)}╯`));
+  L.push(...frame(title, meta, summary.map(([label, value, tone]) => `${dot(tone)} ${label.padEnd(14)}${fit(value, W - 21)}`)));
 
   // ── security
   if (sec.length || audit.skipped) {

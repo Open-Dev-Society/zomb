@@ -10,13 +10,21 @@ import { parseAll, dependents, touches, clones, orphanRoutes } from './signals.j
 import { scanRepo, npmAudit, openRoute, hasAuthSignal, securityFindings } from './security.js';
 import { renderReport } from './report.js';
 import { toTasks, fingerprint, toMarkdown } from './tasks.js';
-import { render, spinner } from './terminal.js';
+import { render, spinner, ui } from './terminal.js';
 import { fix } from './fix.js';
 import { changesSince, scopeTo, shortcuts } from './diff.js';
 
-const { values: opts, positionals } = parseArgs({
+const paint = (tty) => ui({ width: process.stdout.columns || 80, color: Boolean(tty) && !process.env.NO_COLOR });
+const { dim, red, yellow, green, cyan } = paint(process.stderr.isTTY);
+const log = (msg) => process.stderr.write(`${dim('zomb')} ${msg}\n`);
+const fail = (msg) => (process.stderr.write(`${red('✗')} ${msg}\n`), process.exit(1));
+
+let args;
+try {
+  args = parseArgs({
   allowPositionals: true,
   options: {
+    help: { type: 'boolean', short: 'h', default: false },
     out: { type: 'string' },
     json: { type: 'boolean', default: false },
     markdown: { type: 'boolean', default: false },
@@ -27,7 +35,37 @@ const { values: opts, positionals } = parseArgs({
     'dry-run': { type: 'boolean', default: false },
     'no-checks': { type: 'boolean', default: false },
   },
-});
+  });
+} catch (e) {
+  fail(`${e.message.split('. ')[0]}  ${dim('(zomb --help)')}`);
+}
+const { values: opts, positionals } = args;
+if (opts.help) {
+  const { bold, dim, cyan, rule } = paint(process.stdout.isTTY);
+  const cmd = (c, what) => `  ${cyan(c.padEnd(26))}${what}`;
+  console.log(`
+${bold('zomb')}  ${dim('a health check for codebases written with AI')}
+
+${rule('COMMANDS')}
+${cmd('zomb [path]', 'scan: security, zombie code, sprawl, architecture')}
+${cmd('zomb fix [path]', 'delete dead code on a branch, gated by your build')}
+${cmd('zomb guard', 'Claude Code hook: blocks bad edits as they happen')}
+
+${rule('SCAN')}
+${cmd('--all', 'every finding, not just the top 5')}
+${cmd('--since <ref>', 'only what changed since a branch or commit')}
+${cmd('--json', 'an ordered to-do list for an agent or CI')}
+${cmd('--markdown', 'a pull request comment')}
+${cmd('--out <file>', 'where to write the HTML report')}
+${cmd('--save-baseline', 'accept today\'s findings; only new ones fail')}
+${cmd('--fail-on <level>', 'exit 1 on new high, medium or low findings')}
+
+${rule('FIX')}
+${cmd('--dry-run', 'show the plan, change nothing')}
+${cmd('--no-checks', 'skip the typecheck, lint, test and build gate')}
+`);
+  process.exit(0);
+}
 // `zomb fix [path]` does the safe clean-up; plain `zomb [path]` reports
 const command = positionals[0] === 'fix' ? positionals.shift() : 'scan';
 const LEVELS = { high: ['high'], medium: ['high', 'medium'], low: ['high', 'medium', 'low'] };
@@ -36,9 +74,7 @@ const sh = (cmd, args, cwd) => exec(cmd, args, { cwd, maxBuffer: 512 * 1024 * 10
 const CODE = /\.[cm]?[jt]sx?$/;
 const OWN = [':!.zomb', ':!*zomb-report*.html'];
 
-const log = (msg) => process.stderr.write(`zomb: ${msg}\n`);
 const target = path.resolve(positionals[0] || '.');
-const fail = (msg) => (log(msg), process.exit(1));
 if (!existsSync(target)) fail(`${target} does not exist`);
 if (opts['fail-on'] && !LEVELS[opts['fail-on']]) fail(`--fail-on takes high, medium or low, not "${opts['fail-on']}"`);
 const root = (await sh('git', ['rev-parse', '--show-toplevel'], target).catch(() => fail(`${target} is not inside a git repo`))).trim();
@@ -52,7 +88,7 @@ async function knip() {
     const why = `${e.stderr || e.message}`.split('\n').find((l) => l.startsWith('ERROR')) || e.message.split('\n')[0];
     const hint = existsSync(path.join(root, 'node_modules')) ? '' : ' Run npm install in the repo first: Knip needs dependencies to read config files.';
     const error = `${why.replace(/^ERROR:\s*/, '')}.${hint}`;
-    log(`Knip failed, so zombie detection is skipped: ${error}`);
+    process.stderr.write(`${yellow('!')} Knip failed, so zombie detection is skipped: ${error}\n`);
     return { issues: [], error };
   }
 }
@@ -194,21 +230,21 @@ if (opts.since) {
 }
 const tasks = toTasks(data);
 
-if (command === 'fix') process.exit(await fix({ root, data, dryRun: opts['dry-run'], noChecks: opts['no-checks'], color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR }));
+if (command === 'fix') process.exit(await fix({ root, data, dryRun: opts['dry-run'], noChecks: opts['no-checks'], color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR, width: process.stdout.columns || 80 }));
 
 // Baseline: the findings you already have. With one saved, only new findings fail --fail-on.
 const baselinePath = path.join(root, '.zomb', 'baseline.json');
 if (opts['save-baseline']) {
   await mkdir(path.dirname(baselinePath), { recursive: true });
   await writeFile(baselinePath, `${JSON.stringify({ version: 1, commit: data.commit, saved: data.date, fingerprints: [...new Set(tasks.map(fingerprint))].sort() }, null, 2)}\n`);
-  log(`saved ${tasks.length} current findings to .zomb/baseline.json: from now on only new ones fail --fail-on. Commit this file.`);
+  process.stderr.write(`${green('✓')} saved ${tasks.length} current findings to ${cyan('.zomb/baseline.json')}\n  ${dim('From now on only new ones fail --fail-on. Commit this file.')}\n`);
   process.exit(0);
 }
 const baseline = existsSync(baselinePath) ? new Set(JSON.parse(await readFile(baselinePath, 'utf8')).fingerprints) : null;
 if (baseline) for (const t of tasks) t.new = !baseline.has(fingerprint(t));
 const failing = opts['fail-on'] ? tasks.filter((t) => LEVELS[opts['fail-on']].includes(t.severity) && (!baseline || t.new)) : [];
 const done = () => {
-  if (failing.length) log(`${failing.length} ${baseline ? 'new ' : ''}finding${failing.length === 1 ? '' : 's'} at or above --fail-on ${opts['fail-on']}`);
+  if (failing.length) process.stderr.write(`${red('✗')} ${failing.length} ${baseline ? 'new ' : ''}finding${failing.length === 1 ? '' : 's'} at or above --fail-on ${opts['fail-on']}\n`);
   process.exit(failing.length ? 1 : 0);
 };
 

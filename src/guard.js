@@ -137,7 +137,9 @@ export async function main() {
     const list = (items) => items.map((i) => `  - ${i}`).join('\n');
     if (deny.length) {
       const reason = `zomb guard stopped this edit to ${file}:\n${list(deny)}${warn.length ? `\nAlso:\n${list(warn)}` : ''}\nFix these and try again. If one is truly needed, add \`// zomb-allow: <why>\` on that line and tell the user why.`;
-      process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
+      // systemMessage is what the user sees; the reason goes to the agent
+      const shown = `⛔ zomb guard blocked an edit to ${file}\n${deny.map((d) => `   ✗ ${d.split('. ')[0]}`).join('\n')}`;
+      process.stdout.write(JSON.stringify({ systemMessage: shown, hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
     } else if (warn.length) {
       process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: `zomb guard notes on ${file}:\n${list(warn)}` } }));
     }

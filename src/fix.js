@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { ui } from './terminal.js';
 
 const exec = promisify(execFile);
 const CHECK_TIMEOUT = 15 * 60 * 1000;
@@ -38,11 +39,8 @@ export const isTooling = (name) =>
 
 const chunk = (list, size) => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, i * size + size));
 
-export async function fix({ root, data, dryRun = false, noChecks = false, color = true, log = console.log }) {
-  const paint = (code) => (s) => (color ? `\x1b[${code}m${s}\x1b[0m` : String(s));
-  const [bold, dim, red, yellow, green, cyan] = [paint(1), paint(2), paint(31), paint(33), paint(32), paint(36)];
-  const n = (x) => x.toLocaleString('en-US');
-  const plural = (k, word) => `${n(k)} ${word}${k === 1 ? '' : 's'}`;
+export async function fix({ root, data, dryRun = false, noChecks = false, color = true, width = 80, log = console.log }) {
+  const { dim, red, yellow, green, cyan, bold, n, plural, row, wrap, rule, frame } = ui({ width, color });
   const git = (...args) => exec('git', args, { cwd: root, maxBuffer: 64 * 1024 * 1024 }).then((r) => r.stdout.trim());
 
   const z = data.zombie;
@@ -52,21 +50,34 @@ export async function fix({ root, data, dryRun = false, noChecks = false, color 
   const tooling = z.packages.map((p) => p.name).filter(isTooling);
 
   // ── the plan
-  log(`\n${bold('zomb fix')}  ${dim(data.repo)}\n`);
-  log(`  ${files.length ? '●' : dim('○')} delete ${plural(files.length, 'dead file')} ${dim(`(${n(files.reduce((s, f) => s + f.lines, 0))} lines)`)}`);
-  log(`  ${exportCount ? '●' : dim('○')} remove ${plural(exportCount, 'dead export')}`);
-  log(`  ${packages.length ? '●' : dim('○')} uninstall ${plural(packages.length, 'unused package')}${packages.length ? dim(`: ${packages.join(', ')}`) : ''}`);
+  const lines = files.reduce((s, f) => s + f.lines, 0);
+  const mark = (k) => (k ? cyan('●') : dim('○'));
+  log('');
+  for (const l of frame(`${bold('zomb fix')}  ${data.repo}`, dryRun ? yellow('dry run') : '', [
+    `${mark(files.length)} delete ${plural(files.length, 'dead file')}${lines ? dim(`  ${n(lines)} lines`) : ''}`,
+    `${mark(exportCount)} remove ${plural(exportCount, 'dead export')}`,
+    `${mark(packages.length)} uninstall ${plural(packages.length, 'unused package')}`,
+  ]))
+    log(l);
+  if (packages.length) for (const l of wrap(dim('packages'), packages)) log(l);
   const scripts = z.files.filter((f) => f.script);
   const loose = z.files.filter((f) => !f.script && !f.committed);
-  if (scripts.length) log(dim(`  left for you: ${plural(scripts.length, 'script')} you may run by hand (${scripts.map((f) => f.path).join(', ')})`));
-  if (loose.length) log(dim(`  left for you: ${plural(loose.length, 'dead file')} not committed yet (${loose.map((f) => f.path).join(', ')})`));
-  if (tooling.length) log(dim(`  left for you: ${plural(tooling.length, 'tooling package')} that configs may load by name (${tooling.join(', ')})`));
-  if (!files.length && !exportCount && !packages.length) return log(green('\n  Nothing to clean up.\n')), 0;
-  if (dryRun) return log(dim('\n  Dry run: nothing changed. Run without --dry-run to do it.\n')), 0;
+  const left = [
+    [`${plural(scripts.length, 'script')} you may run by hand`, scripts.map((f) => f.path)],
+    [`${plural(loose.length, 'dead file')} not committed yet`, loose.map((f) => f.path)],
+    [`${plural(tooling.length, 'tooling package')} configs may load by name`, tooling],
+  ].filter(([, items]) => items.length);
+  if (left.length) log(`\n${rule('LEFT FOR YOU', dim('zomb won\'t touch these'))}`);
+  for (const [label, items] of left) {
+    log(row(`${yellow('!')} ${label}`));
+    for (const l of wrap('', items, 3)) log(l);
+  }
+  if (!files.length && !exportCount && !packages.length) return log(`\n  ${green('✓')} Nothing to clean up.\n`), 0;
+  if (dryRun) return log(`\n  ${dim('Dry run: nothing changed. Run')} ${cyan('zomb fix')} ${dim('to do it.')}\n`), 0;
 
   // ── safety first: never mix our changes into uncommitted work
   if (await git('status', '--porcelain', '--untracked-files=no')) {
-    log(red('\n  You have uncommitted changes. Commit or stash them first: zomb fix commits its work on a new branch.\n'));
+    log(`\n  ${red('✗')} You have uncommitted changes. ${dim('Commit or stash them first: zomb fix commits its work on a new branch.')}\n`);
     return 1;
   }
   const pkg = existsSync(path.join(root, 'package.json')) ? JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) : {};
@@ -79,16 +90,16 @@ export async function fix({ root, data, dryRun = false, noChecks = false, color 
       () => ({ ok: true }),
       (e) => ({ ok: false, tail: `${e.stdout || ''}${e.stderr || ''}`.trim().split('\n').slice(-6).join('\n') }),
     );
-  log(`\n${bold('Checks')} ${dim('(run once first; only ones that pass now are used to judge each change)')}`);
+  log(`\n${rule('CHECKS', dim('the ones that pass now judge every change'))}`);
   const gates = [];
   for (const c of checks) {
     const r = await runCheck(c);
-    log(`  ${r.ok ? green('✓') : yellow('✗')} ${c.label}${r.ok ? '' : dim('  already failing, ignored')}`);
+    log(row(`${r.ok ? green('✓') : yellow('✗')} ${c.label}`, r.ok ? '' : dim('already failing, ignored')));
     if (r.ok) gates.push(c);
   }
   if (!gates.length && !noChecks) {
-    log(red(`\n  No passing typecheck, lint, test or build script to prove the changes safe.`));
-    log(dim(`  Add one to package.json, or run zomb fix --no-checks and review the branch yourself.\n`));
+    log(`\n  ${red('✗')} No passing typecheck, lint, test or build script to prove the changes safe.`);
+    log(`    ${dim('Add one to package.json, or run')} ${cyan('zomb fix --no-checks')} ${dim('and review the branch yourself.')}\n`);
     return 1;
   }
   const verify = async () => {
@@ -103,7 +114,7 @@ export async function fix({ root, data, dryRun = false, noChecks = false, color 
   let branch = `zomb/fix-${new Date().toLocaleDateString('en-CA')}`;
   for (let i = 2; await git('rev-parse', '--verify', '--quiet', branch).then(() => true, () => false); i++) branch = `zomb/fix-${new Date().toLocaleDateString('en-CA')}-${i}`;
   await git('switch', '-q', '-c', branch);
-  log(`\n${bold('Working on')} ${cyan(branch)}`);
+  log(`\n${rule('CLEANING', cyan(branch))}`);
 
   const undo = async (reinstall) => {
     await git('reset', '-q', '--hard', 'HEAD'); // only our uncommitted batch: the tree was clean when we started
@@ -146,7 +157,7 @@ export async function fix({ root, data, dryRun = false, noChecks = false, color 
       await commit(`zomb fix: delete ${plural(ok.length, 'unused file')} (${n(lines)} lines)`);
       done.files.push(...ok);
       done.lines += lines;
-      log(`  ${green('✓')} deleted ${plural(ok.length, 'file')} ${dim(`(${n(lines)} lines)`)}`);
+      log(row(`${green('✓')} deleted ${plural(ok.length, 'file')}`, dim(`${n(lines)} lines`)));
     }
   }
 
@@ -158,7 +169,7 @@ export async function fix({ root, data, dryRun = false, noChecks = false, color 
       await git('add', '-A');
       await commit('zomb fix: remove unused exports');
       done.exports = true;
-      log(`  ${green('✓')} removed dead exports`);
+      log(row(`${green('✓')} removed dead exports`));
     }
   }
 
@@ -170,21 +181,23 @@ export async function fix({ root, data, dryRun = false, noChecks = false, color 
       await git('add', '-A');
       await commit(`zomb fix: uninstall ${plural(ok.length, 'unused package')}\n\n${ok.join(', ')}`);
       done.packages = ok;
-      log(`  ${green('✓')} uninstalled ${ok.join(', ')}`);
+      for (const l of wrap(`${green('✓')} uninstalled`, ok)) log(l);
     }
   }
 
   // ── summary
-  log(`\n${bold('Done')}  ${green(`−${n(done.lines)} lines`)} · ${plural(done.files.length, 'file')} deleted · ${done.exports ? 'dead exports removed · ' : ''}${plural(done.packages.length, 'package')} uninstalled`);
-  for (const k of kept) log(`  ${yellow('kept')} ${k.item} ${dim(`(${k.why}, so it isn't dead after all)`)}`);
+  log(`\n${rule('DONE', green(`−${n(done.lines)} lines`))}`);
+  log(row(`${plural(done.files.length, 'file')} deleted${dim(' · ')}${done.exports ? `dead exports removed${dim(' · ')}` : ''}${plural(done.packages.length, 'package')} uninstalled`));
+  for (const k of kept) log(row(`${yellow('kept')} ${k.item}`, dim(`${k.why}, so it isn't dead`)));
   if (!done.files.length && !done.exports && !done.packages.length) {
     await git('switch', '-q', original);
     await git('branch', '-q', '-D', branch);
-    log(dim(`  Nothing could be removed safely; deleted the empty branch.\n`));
+    log(`  ${dim('Nothing could be removed safely; deleted the empty branch.')}\n`);
     return 0;
   }
-  log(`\n  Review:  ${cyan(`git diff ${original}...${branch}`)}`);
-  log(`  Keep it: ${cyan(`git switch ${original} && git merge ${branch}`)}`);
-  log(`  Drop it: ${cyan(`git switch ${original} && git branch -D ${branch}`)}\n`);
+  log('');
+  log(`  ${dim('review')}   ${cyan(`git diff ${original}...${branch}`)}`);
+  log(`  ${dim('keep it')}  ${cyan(`git switch ${original} && git merge ${branch}`)}`);
+  log(`  ${dim('drop it')}  ${cyan(`git switch ${original} && git branch -D ${branch}`)}\n`);
   return 0;
 }

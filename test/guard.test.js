@@ -82,6 +82,7 @@ test('the hook speaks Claude Code: deny with a reason, notes as context, silence
     const denied = JSON.parse(hook('Write', { file_path: path.join(dir, 'src/a.ts'), content: '// @ts-ignore\nconst x = 1;\n' })).hookSpecificOutput;
     assert.equal(denied.permissionDecision, 'deny');
     assert.match(denied.permissionDecisionReason, /zomb guard stopped this edit to src\/a\.ts/);
+    assert.match(JSON.parse(hook('Write', { file_path: path.join(dir, 'src/a.ts'), content: '// @ts-ignore\nconst x = 1;\n' })).systemMessage, /blocked an edit to src\/a\.ts\n   ✗ line 1: silences the type checker/);
     const noted = JSON.parse(hook('Edit', { file_path: path.join(dir, 'src/Chat.tsx'), old_string: 'return null', new_string: 'return (x as any)' })).hookSpecificOutput;
     assert.equal(noted.permissionDecision, undefined);
     assert.match(noted.additionalContext, /casts to any/);
