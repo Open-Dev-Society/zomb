@@ -18,6 +18,26 @@ zomb --since main         # only what your branch changed, plus the shortcuts it
 zomb --since HEAD         # only your uncommitted work
 ```
 
+## Guard: stop the mess as the agent writes it
+
+With the plugin installed, Claude Code runs zomb before every file edit. It checks only the lines being added and takes about 40 ms.
+
+**It blocks, and tells the agent why:**
+- API keys written into code, and secrets in `NEXT_PUBLIC_`/`VITE_` variables (masked in the message)
+- `@ts-ignore`, `@ts-nocheck`, and `eslint-disable` without a `-- reason`
+- `.only` and `.skip` tests, and branches on the test environment
+- SQL and shell commands built from strings
+- a `V2`, `old` or `copy` file next to the original it duplicates
+- a second library for a job the repo already has one for (`lucide-react` when you use `react-icons`)
+
+**It notes, without blocking:** `as any`, empty `catch` blocks, a function or component that already exists elsewhere, and a file growing past 500 lines.
+
+When something is deliberate, `// zomb-allow: <why>` on that line lets it through. `ZOMB_GUARD=off` turns Guard off. Without the plugin, add the hook to `.claude/settings.json` yourself:
+
+```json
+{ "hooks": { "PreToolUse": [ { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "zomb guard" } ] } ] } }
+```
+
 ## Clean up automatically
 
 ```bash

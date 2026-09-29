@@ -94,6 +94,14 @@ export function growth(history) {
 // Files and folders whose name says "another version of something": LandingV2, api-old, utils copy, ov2/, legacy/.
 const VERSIONED = /^(.+?)(?:[-_. ]?(?:v\d+|new|old|copy|backup|bak|legacy|temp|tmp|final|fixed|deprecated|unused|draft)|(?<=[a-z0-9])(?:V\d+|New|Old|Copy|Backup|Legacy|Temp|Final|Fixed|Deprecated|Draft))$/;
 const VERSIONED_DIR = /^(v\d+|old|legacy|backup|deprecated|archive|unused|temp|tmp|[a-z]{1,3}v\d+)$/i;
+// src/ChatV2.tsx -> src/Chat.tsx: the file this name says it is a version of (null when the name isn't versioned)
+export function originalOf(file) {
+  const dir = file.slice(0, file.lastIndexOf('/') + 1);
+  const [, stem, ext] = file.slice(dir.length).match(/^(.*?)((?:\.[a-z0-9]+)+)$/i) || [null, file.slice(dir.length), ''];
+  const m = stem.match(VERSIONED);
+  return m && m[1].length > 1 ? `${dir}${m[1]}${ext}` : null;
+}
+
 // -> [{ path, original|null }] for files, then [{ path:'dir/', files:N }] for versioned folders (counted once, not per file)
 export function versionSprawl(files) {
   const set = new Set(files);
@@ -109,9 +117,8 @@ export function versionSprawl(files) {
       folders.set(folder, (folders.get(folder) || 0) + 1);
       continue;
     }
-    const [, stem, ext] = f.slice(dir.length).match(/^(.*?)((?:\.[a-z0-9]+)+)$/i) || [null, f.slice(dir.length), ''];
-    const m = stem.match(VERSIONED);
-    if (m && m[1].length > 1) out.push({ path: f, original: set.has(`${dir}${m[1]}${ext}`) ? `${dir}${m[1]}${ext}` : null });
+    const original = originalOf(f);
+    if (original) out.push({ path: f, original: set.has(original) ? original : null });
   }
   return [...out, ...[...folders].map(([path, n]) => ({ path, files: n, original: null }))];
 }
@@ -136,6 +143,14 @@ const OVERLAP = {
 const ALIAS = { '@reduxjs/toolkit': 'redux', 'react-redux': 'redux', 'react-chartjs-2': 'chart.js', 'echarts-for-react': 'echarts', 'react-apexcharts': 'apexcharts', '@emotion/react': 'emotion', '@emotion/styled': 'emotion', '@react-spring/web': 'react-spring', 'react-query': '@tanstack/react-query' };
 export const packageOf = (spec) => (spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]);
 const family = (pkg) => ALIAS[pkg] || (pkg.startsWith('@nivo/') ? 'nivo' : pkg.startsWith('@visx/') ? 'visx' : pkg.startsWith('d3-') ? 'd3' : pkg);
+// 'lucide-react' + the repo's dependencies -> { job:'icon sets', existing:['react-icons'] } when another library already does that job
+export function sameJob(pkg, deps) {
+  const job = Object.entries(OVERLAP).find(([, libs]) => libs.includes(family(pkg)))?.[0];
+  if (!job) return null;
+  const existing = [...new Set(deps.filter((d) => family(d) !== family(pkg) && OVERLAP[job].includes(family(d))))];
+  return existing.length ? { job, existing } : null;
+}
+
 // packages: Map(package name -> [files importing it]) -> [{ job, libraries:[{ name, files }] }]
 export function overlaps(packages) {
   const out = [];

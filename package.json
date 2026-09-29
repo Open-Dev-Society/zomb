@@ -4,7 +4,7 @@
   "description": "A health check for AI-written codebases: security holes, zombie code, sprawl and architecture.",
   "type": "module",
   "bin": {
-    "zomb": "src/cli.js"
+    "zomb": "src/bin.js"
   },
   "files": [
     "src"

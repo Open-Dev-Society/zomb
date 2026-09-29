@@ -18,6 +18,13 @@ const ADDED = [
   ['low', 'Swallows errors in an empty catch', /\bcatch\s*(?:\([^)]*\))?\s*\{\s*\}/],
 ];
 
+// One added line -> the shortcuts it takes [{ severity, kind }]. Comments only count when they are a suppression.
+export function lineShortcuts(text, file) {
+  if (/^\s*(\/\/|\*|\/\*)/.test(text) && !/@ts-|eslint-disable|biome-ignore|oxlint-disable/.test(text)) return [];
+  const test = isTest(file);
+  return ADDED.filter(([, , re, where]) => (!where || (where === 'test') === test) && re.test(text)).map(([severity, kind]) => ({ severity, kind }));
+}
+
 // `git diff -U0` text -> [{ severity, kind, file, line }] plus per-file counts of removed tests and assertions.
 export function shortcuts(diffText, deletedFiles = []) {
   const out = [];
@@ -39,8 +46,7 @@ export function shortcuts(diffText, deletedFiles = []) {
     const test = isTest(file);
     const text = raw.slice(1);
     if (raw.startsWith('+')) {
-      if (!/^\s*(\/\/|\*|\/\*)/.test(text) || /@ts-|eslint-disable|biome-ignore|oxlint-disable/.test(text))
-        for (const [severity, kind, re, where] of ADDED) if ((!where || (where === 'test') === test) && re.test(text)) out.push({ severity, kind, file, line });
+      for (const s of lineShortcuts(text, file)) out.push({ ...s, file, line });
       if (test) bump(counts, file, text, -1);
       line++;
     } else if (raw.startsWith('-') && test) bump(counts, file, text, 1);

@@ -1,7 +1,7 @@
 {
   "name": "zomb",
   "version": "0.0.1",
-  "description": "A health check for AI-written codebases. /zomb-guard checks an agent's change before it says done; /zomb-clean fixes security holes and deletes zombie code, checking the build after every step.",
+  "description": "A health check for AI-written codebases. Guard checks every edit before it lands and stops keys, @ts-ignore, skipped tests, V2 copies and duplicate libraries; /zomb-guard and /zomb-clean check and clean the rest.",
   "author": {
     "name": "Open Dev Society"
   },
