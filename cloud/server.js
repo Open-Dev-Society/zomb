@@ -161,7 +161,7 @@ const page = (title, body) => `<!doctype html><html lang="en"><head><meta charse
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif}
 main{max-width:960px;margin:0 auto;padding:48px 16px 80px}h1{font-size:32px;letter-spacing:-.02em;margin:0 0 4px}a{color:inherit}.muted{color:var(--muted)}
 .btn{display:inline-block;background:var(--accent);color:var(--bg);border:0;border-radius:8px;padding:10px 16px;font:inherit;font-weight:600;text-decoration:none;cursor:pointer}
-.btn.ghost{background:none;color:var(--fg);border:1px solid var(--line);padding:4px 10px;font-size:13px;font-weight:500}
+.btn.ghost{background:none;color:var(--fg);border:1px solid var(--line);padding:4px 10px;font-size:13px;font-weight:500;white-space:nowrap}
 table{width:100%;border-collapse:collapse;margin-top:32px}th,td{text-align:left;padding:12px 8px;border-bottom:1px solid var(--line);vertical-align:middle}th{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
 td b{font-variant-numeric:tabular-nums}.bad{color:var(--bad)}.good{color:var(--good)}svg{display:block}.wrap{overflow-x:auto}
 header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
@@ -186,7 +186,7 @@ function dashboard(db, me, cfg) {
   const rows = repos.map((r) => {
     const scans = db.prepare("SELECT * FROM scans WHERE repo = ? AND kind != 'pr' ORDER BY id DESC LIMIT 12").all(r.id).reverse().map((s) => ({ ...s, summary: JSON.parse(s.summary) }));
     const last = scans.at(-1)?.summary;
-    const cell = (pick) => `<td><b class="${last && pick(last) ? 'bad' : ''}">${last ? pick(last) : '–'}</b>${spark(scans.map((s) => pick(s.summary) || 0))}</td>`;
+    const cell = (pick) => (last ? `<td><b class="${pick(last) ? 'bad' : ''}">${(pick(last) || 0).toLocaleString('en-US')}</b>${spark(scans.map((s) => pick(s.summary) || 0))}</td>` : '<td class="muted">–</td>');
     return `<tr><td><a href="${esc(cfg.web)}/${esc(r.name)}">${esc(r.name)}</a><br><span class="muted">${scans.length ? `scanned ${esc(scans.at(-1).at.slice(0, 10))}` : 'waiting for the first push'}</span></td>
 ${cell((s) => s.security.high)}${cell((s) => s.zombie.lines)}${cell((s) => s.zombie.packages)}${cell((s) => s.architecture.cycles + s.architecture.bigFiles)}${cell((s) => s.blueprint || 0)}
 <td><form method="post" action="/repos/${r.id}/copilot"><button class="btn ghost">Hand to Copilot</button></form></td></tr>`;
