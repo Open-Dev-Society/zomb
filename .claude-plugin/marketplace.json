@@ -1,0 +1,16 @@
+{
+  "name": "zomb",
+  "owner": {
+    "name": "Open Dev Society"
+  },
+  "metadata": {
+    "description": "zomb: a health check and clean-up skill for AI-written codebases."
+  },
+  "plugins": [
+    {
+      "name": "zomb",
+      "source": "./",
+      "description": "A health check for AI-written codebases. /zomb-clean fixes security holes, deletes zombie code and unused packages, and checks the build after every step."
+    }
+  ]
+}

@@ -9,7 +9,25 @@ npx zomb              # run inside any git repo
 npx zomb path/to/repo --out report.html
 ```
 
-It writes a single HTML report. Your code never leaves your machine.
+It prints a summary, writes a single HTML report, and your code never leaves your machine.
+
+```bash
+zomb --all     # every finding in the terminal, not just the top 5
+zomb --json    # an ordered to-do list for an AI agent or CI
+```
+
+## Let your agent fix it
+
+`zomb --json` returns tasks like `{ area, severity, action, title, where, how, safe }`. `safe: true` marks mechanical clean-up (delete a dead file, uninstall an unused package) that a build can verify. Everything else needs a human yes.
+
+In Claude Code, install the plugin and run `/zomb-clean`:
+
+```bash
+claude plugin marketplace add Open-Dev-Society/zomb
+claude plugin install zomb@zomb
+```
+
+`/zomb-clean` works on a new branch. It fixes security issues first, then deletes zombie code in small batches, running your typecheck, tests and build after each batch and undoing any batch that breaks something. It asks before anything that changes how the code is organised, and ends with a before/after and the things only you can do (like rotating a leaked key). Any other agent can follow [skills/zomb-clean/SKILL.md](skills/zomb-clean/SKILL.md).
 
 ## What it checks
 

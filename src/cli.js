@@ -9,8 +9,12 @@ import { isAgent, parseBlame, testsOnly, isTest, growth, versionSprawl, overlaps
 import { parseAll, dependents, touches, clones, orphanRoutes } from './signals.js';
 import { scanRepo, npmAudit, openRoute, hasAuthSignal, securityFindings } from './security.js';
 import { renderReport } from './report.js';
+import { toTasks } from './tasks.js';
 
-const { values: opts, positionals } = parseArgs({ allowPositionals: true, options: { out: { type: 'string', default: 'zomb-report.html' } } });
+const { values: opts, positionals } = parseArgs({
+  allowPositionals: true,
+  options: { out: { type: 'string', default: 'zomb-report.html' }, json: { type: 'boolean', default: false }, all: { type: 'boolean', default: false } },
+});
 const exec = promisify(execFile);
 const sh = (cmd, args, cwd) => exec(cmd, args, { cwd, maxBuffer: 512 * 1024 * 1024 }).then((r) => r.stdout);
 const CODE = /\.[cm]?[jt]sx?$/;
@@ -155,28 +159,58 @@ const data = {
   sprawl: { months, recent, dupes, names: sameNames(parsed), versions: versionSprawl(files), overlaps: overlaps(packages) },
   architecture: { cycles: loops, big, shared: sharedFolders(files), deep, naming: namingStyles(files) },
 };
+const tasks = toTasks(data);
+
+// --json: the to-do list for an AI agent (or CI). No HTML, nothing else on stdout.
+if (opts.json) {
+  const summary = {
+    security: { high: security.filter((f) => f.severity === 'high').length, medium: security.filter((f) => f.severity === 'medium').length },
+    zombie: { files: zombies.length, lines: zombies.reduce((s, f) => s + f.lines, 0), packages: unusedPackages.length, exports: deadExports.reduce((s, e) => s + e.names.length, 0) },
+    architecture: { cycles: loops.length, bigFiles: big.length },
+  };
+  console.log(JSON.stringify({ repo: data.repo, commit: data.commit, summary, tasks }, null, 2));
+  process.exit(0);
+}
+
 const out = path.resolve(opts.out);
 await writeFile(out, renderReport(data));
 
 // ---------- terminal summary ----------
+const tty = process.stdout.isTTY && !process.env.NO_COLOR;
+const paint = (code) => (s) => (tty ? `\x1b[${code}m${s}\x1b[0m` : String(s));
+const [bold, dim, red, yellow, green] = [paint(1), paint(2), paint(31), paint(33), paint(32)];
 const n = (x) => x.toLocaleString('en-US');
 const plural = (k, word) => `${n(k)} ${word}${k === 1 ? '' : 's'}`;
+const cap = opts.all ? Infinity : 5;
+const rest = (list) => (list.length > cap ? [dim(`  …and ${n(list.length - cap)} more (see the report, or run with --all)`)] : []);
+const section = (title, line) => console.log(`\n${bold(title)}  ${line}`);
+const row = (s) => console.log(`  ${s}`);
+
 const high = security.filter((f) => f.severity === 'high').length;
-console.log(`\nSECURITY  ${security.length ? `${high} high · ${security.length - high} medium` : 'nothing found'}`);
-for (const f of security.slice(0, 6)) console.log(`  ${f.severity.padEnd(6)}  ${f.title}  (${f.where})`);
-if (audit.skipped) console.log(`  (vulnerable packages not checked: ${audit.skipped})`);
+section('SECURITY', security.length ? `${red(`${high} high`)} · ${yellow(`${security.length - high} medium`)}` : green('nothing found'));
+for (const f of security.slice(0, cap)) row(`${(f.severity === 'high' ? red : yellow)(f.severity.padEnd(6))}  ${f.title}  ${dim(f.where)}`);
+for (const l of rest(security)) console.log(l);
+if (audit.skipped) row(dim(`vulnerable packages not checked: ${audit.skipped}`));
 
 const zLines = zombies.reduce((s, f) => s + f.lines, 0);
-console.log(`\nZOMBIE CODE  ${knipOut.error ? 'skipped (Knip failed)' : `${plural(zombies.length, 'file')} · ${n(zLines)} lines · ${plural(unusedPackages.length, 'unused package')}`}`);
-for (const f of zombies.slice(0, 5)) console.log(`  ${f.path}  ${n(f.lines)} lines · ${f.why.toLowerCase()}${f.share >= 0.5 ? ` · ${Math.round(f.share * 100)}% by ${f.agents.join(', ')}` : ''}`);
-if (unusedPackages.length) console.log(`  unused packages: ${unusedPackages.map((p) => p.name).join(', ')}`);
-if (maybe.length) console.log(`  maybe zombie: ${maybe.map((m) => m.url).join(', ')} (nothing in the repo links to them)`);
+section('ZOMBIE CODE', knipOut.error ? yellow('skipped (Knip failed)') : `${bold(`${n(zLines)} lines`)} in ${plural(zombies.length, 'file')} · ${plural(unusedPackages.length, 'unused package')} · ${plural(deadExports.reduce((s, e) => s + e.names.length, 0), 'dead export')}`);
+for (const f of zombies.slice(0, cap)) row(`${f.path}  ${dim(`${n(f.lines)} lines · ${f.why.toLowerCase()}${f.share >= 0.5 ? ` · ${Math.round(f.share * 100)}% by ${f.agents.join(', ')}` : ''}`)}`);
+for (const l of rest(zombies)) console.log(l);
+if (unusedPackages.length) row(`unused packages: ${unusedPackages.map((p) => p.name).join(', ')}`);
+if (maybe.length) row(`maybe zombie: ${maybe.map((m) => m.url).join(', ')} ${dim('(nothing in the repo links to them)')}`);
 
 const added = recent.reduce((s, m) => s + m.added, 0), deleted = recent.reduce((s, m) => s + m.deleted, 0);
-console.log(`\nSPRAWL  ${added ? `last 3 months: ${n(added)} lines added, ${n(deleted)} deleted (${Math.round((deleted / added) * 100)} deleted per 100 added)` : 'no commits in the last 3 months'}`);
-console.log(`  ${[dupes?.length && `${plural(dupes.length, 'duplicated block')}`, data.sprawl.names.length && `${plural(data.sprawl.names.length, 'name')} defined in 2+ files`, data.sprawl.versions.length && `${plural(data.sprawl.versions.length, 'versioned copy', )} (V2, old, copy…)`.replace('copys', 'copies')].filter(Boolean).join(' · ') || 'no duplication found'}`);
-for (const o of data.sprawl.overlaps) console.log(`  ${o.libraries.length} ${o.job}: ${o.libraries.map((l) => `${l.name} (${l.files})`).join(', ')}`);
+section('SPRAWL', added ? `last 3 months: ${n(added)} lines added, ${n(deleted)} deleted ${bold(`(${Math.round((deleted / added) * 100)} deleted per 100 added)`)}` : dim('no commits in the last 3 months'));
+for (const o of data.sprawl.overlaps) row(`${o.libraries.length} ${o.job}: ${o.libraries.map((l) => `${l.name} ${dim(`(${l.files})`)}`).join(', ')}`);
+for (const v of data.sprawl.versions.slice(0, cap)) row(`${v.path}  ${dim(v.original ? `next to ${v.original}` : v.files ? `versioned folder, ${plural(v.files, 'file')}` : 'versioned copy')}`);
+for (const x of data.sprawl.names.slice(0, cap)) row(`${x.name}  ${dim(`defined in ${plural(x.files.length, 'file')}`)}`);
+if (dupes?.length) row(`${plural(dupes.length, 'copy-pasted block')} ${dim(`(${n(dupes.reduce((s, d) => s + d.lines, 0))} lines)`)}`);
 
 const a = data.architecture;
-console.log(`\nARCHITECTURE  ${[plural(a.cycles.length, 'import cycle'), `${plural(a.big.length, 'file')} over 500 lines`, a.shared.length > 1 && `shared code in ${a.shared.length} folders`, a.deep.length && `${plural(a.deep.length, 'file')} with ../../../ imports`].filter(Boolean).join(' · ')}`);
-console.log(`\nreport: ${out}`);
+section('ARCHITECTURE', [plural(a.cycles.length, 'import cycle'), `${plural(a.big.length, 'file')} over 500 lines`, a.shared.length > 1 && `shared code in ${a.shared.length} folders`, a.deep.length && `${plural(a.deep.length, 'file')} with ../../../ imports`].filter(Boolean).join(' · '));
+for (const c of a.cycles.slice(0, cap)) row(`cycle: ${dim(c.slice(0, 4).join(' → '))}${c.length > 4 ? dim(` +${c.length - 4}`) : ''}`);
+for (const b of a.big.slice(0, cap)) row(`${b.file}  ${dim(`${n(b.lines)} lines`)}`);
+
+const safe = tasks.filter((t) => t.safe).length;
+console.log(`\n${bold(`${plural(tasks.length, 'task')}`)} ${dim(`(${n(safe)} safe to automate)`)} · report: ${out}`);
+console.log(dim('Fix them with your agent: run /zomb-clean in Claude Code, or pipe `zomb --json` to any agent.'));
