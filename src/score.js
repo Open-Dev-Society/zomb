@@ -40,7 +40,7 @@ const TEST = /(^|\/)(__tests__|__mocks__|tests?|e2e|cypress|playwright|fixtures?
 // Files a framework or runtime loads by name, so having no importer (or only test importers) doesn't make them dead.
 const ENTRY = /(^|\/)(page|layout|route|loading|error|not-found|template|default|middleware|instrumentation|global-error|opengraph-image|twitter-image|icon|apple-icon|sitemap|robots|manifest)\.[cm]?[jt]sx?$|(^|\/)(index|main|server|cli|app)\.[cm]?[jt]sx?$|(^|\/)(bin|scripts|pages)\//;
 export const isTest = (f) => TEST.test(f);
-const isEntry = (f) => ENTRY.test(f);
+export const isEntry = (f) => ENTRY.test(f);
 
 // Files that only tests (or other test-only files) import: their tests keep them alive, nothing else does.
 // parsed: Map(path -> { imports:[paths] }); keep: files known to be live (e.g. started by path from action.yml)
@@ -142,10 +142,11 @@ const OVERLAP = {
 };
 const ALIAS = { '@reduxjs/toolkit': 'redux', 'react-redux': 'redux', 'react-chartjs-2': 'chart.js', 'echarts-for-react': 'echarts', 'react-apexcharts': 'apexcharts', '@emotion/react': 'emotion', '@emotion/styled': 'emotion', '@react-spring/web': 'react-spring', 'react-query': '@tanstack/react-query' };
 export const packageOf = (spec) => (spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]);
-const family = (pkg) => ALIAS[pkg] || (pkg.startsWith('@nivo/') ? 'nivo' : pkg.startsWith('@visx/') ? 'visx' : pkg.startsWith('d3-') ? 'd3' : pkg);
+export const family = (pkg) => ALIAS[pkg] || (pkg.startsWith('@nivo/') ? 'nivo' : pkg.startsWith('@visx/') ? 'visx' : pkg.startsWith('d3-') ? 'd3' : pkg);
 // 'lucide-react' + the repo's dependencies -> { job:'icon sets', existing:['react-icons'] } when another library already does that job
+export const jobOf = (pkg) => Object.entries(OVERLAP).find(([, libs]) => libs.includes(family(pkg)))?.[0];
 export function sameJob(pkg, deps) {
-  const job = Object.entries(OVERLAP).find(([, libs]) => libs.includes(family(pkg)))?.[0];
+  const job = jobOf(pkg);
   if (!job) return null;
   const existing = [...new Set(deps.filter((d) => family(d) !== family(pkg) && OVERLAP[job].includes(family(d))))];
   return existing.length ? { job, existing } : null;
@@ -213,13 +214,15 @@ export function sharedFolders(files) {
 // Component file naming: PascalCase vs kebab-case vs camelCase. Mixed styles make files hard to guess.
 export function namingStyles(files) {
   const count = { PascalCase: 0, 'kebab-case': 0, camelCase: 0, snake_case: 0 };
-  for (const f of files) {
-    if (!/\.[jt]sx$/.test(f) || isTest(f) || isEntry(f)) continue;
-    const stem = f.slice(f.lastIndexOf('/') + 1).replace(/\.[jt]sx$/, '');
-    if (/^[A-Z][A-Za-z0-9]*$/.test(stem)) count.PascalCase++;
-    else if (/^[a-z0-9]+(-[a-z0-9]+)+$/.test(stem)) count['kebab-case']++;
-    else if (/^[a-z]+[A-Z][A-Za-z0-9]*$/.test(stem)) count.camelCase++;
-    else if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(stem)) count.snake_case++;
-  }
+  for (const f of files) if (/\.[jt]sx$/.test(f) && !isTest(f) && !isEntry(f) && styleOf(f)) count[styleOf(f)]++;
   return Object.entries(count).filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
+}
+// 'src/components/UserCard.tsx' -> 'PascalCase'; one-word lowercase names fit every style but PascalCase, so they get null
+export function styleOf(file) {
+  const stem = file.slice(file.lastIndexOf('/') + 1).replace(/\.[cm]?[jt]sx?$/, '');
+  if (/^[A-Z][A-Za-z0-9]*$/.test(stem)) return 'PascalCase';
+  if (/^[a-z0-9]+(-[a-z0-9]+)+$/.test(stem)) return 'kebab-case';
+  if (/^[a-z]+[A-Z][A-Za-z0-9]*$/.test(stem)) return 'camelCase';
+  if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(stem)) return 'snake_case';
+  return null;
 }

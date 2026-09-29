@@ -14,6 +14,7 @@ import { findDangerous, routeFacts } from './security.js';
 // -> Map(path -> { imports, runtime, surfaces, exported, packages, lines, deep, dangerous, route })
 //   imports: every repo file it loads (static, dynamic, re-export); runtime: static non-type imports, for cycles
 //   packages: npm packages it imports; deep: ../../../ imports; dangerous/route: security facts from its source
+//   alias: path-alias prefixes it imports through ('@/'); fetch: whether it calls fetch()
 // ponytail: root tsconfig paths only; per-workspace tsconfigs if monorepo aliases go unresolved
 export async function parseAll(root, files) {
   const inRepo = new Set(files);
@@ -61,6 +62,8 @@ export async function parseAll(root, files) {
       packages: [...new Set(specs.filter((s) => !/^[./~#]|^@\//.test(s) && !s.startsWith('node:') && !resolve(file, s)).map(packageOf))],
       lines: src ? src.split('\n').length : 0,
       deep: specs.filter((s) => /^(\.\.\/){3,}/.test(s)).length,
+      alias: [...new Set(specs.map((s) => s.match(/^[@~#]\//)?.[0]).filter(Boolean))],
+      fetch: /(?<![\w.])fetch\s*\(/.test(src),
       dangerous: findDangerous(src, { shell: surfaces.includes('shell') }),
       route: routeFacts(file, src),
     });

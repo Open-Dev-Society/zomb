@@ -2,7 +2,7 @@
 // `safe` = mechanical and checkable by a build: an agent may do it without asking. Everything else needs a human yes.
 const plural = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
 
-export function toTasks({ security, zombie, sprawl, architecture, shortcuts = [] }) {
+export function toTasks({ security, zombie, sprawl, architecture, shortcuts = [], blueprint }) {
   const tasks = [];
   const add = (t) => tasks.push({ id: tasks.length + 1, ...t });
 
@@ -29,6 +29,17 @@ export function toTasks({ security, zombie, sprawl, architecture, shortcuts = []
   };
   for (const c of shortcuts)
     add({ area: 'shortcuts', severity: c.severity, action: 'undo-shortcut', title: c.kind, where: c.line ? `${c.file}:${c.line}` : c.file, how: SHORTCUT_HOW[c.kind] || 'Restore the tests unless the behaviour they covered was removed on purpose.', safe: false });
+
+  // rules the team approved in .zomb/blueprint.yml: breaking one fails CI like a security hole
+  const BLUEPRINT_HOW = {
+    libraries: 'Use the library the blueprint names, then uninstall the other one if nothing else needs it.',
+    folders: 'Move the file there and update its imports.',
+    naming: 'Rename the file to match, and update its imports.',
+    imports: 'Import through the path alias instead of climbing folders.',
+    api: 'Add the auth check the other routes use. If it is meant to be public, add `// zomb-allow: public` to the file.',
+    files: 'Split it by job into smaller files; keep the public exports stable.',
+  };
+  for (const b of blueprint?.broken || []) add({ area: 'blueprint', severity: 'high', action: 'follow-blueprint', title: b.why, where: b.file, how: BLUEPRINT_HOW[b.rule.split('.')[0]], safe: false });
 
   for (const f of zombie.files)
     add(

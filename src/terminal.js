@@ -60,6 +60,7 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
   const dot = (tone) => ({ bad: red('●'), warn: yellow('●'), ok: green('●') })[tone];
   const summary = [
     ['security', sec.length ? `${high ? `${n(high)} high` : ''}${high && sec.length - high ? ' · ' : ''}${sec.length - high ? `${n(sec.length - high)} medium` : ''}` : 'nothing found', high ? 'bad' : sec.length ? 'warn' : 'ok'],
+    ...(data.blueprint ? [['blueprint', data.blueprint.broken.length ? `${plural(data.blueprint.broken.length, 'rule break')}` : 'followed', data.blueprint.broken.length ? 'bad' : 'ok']] : []),
     ...(data.shortcuts ? [['shortcuts', data.shortcuts.length ? plural(data.shortcuts.length, 'place') : 'none', data.shortcuts.some((c) => c.severity !== 'low') ? 'warn' : 'ok']] : []),
     ['zombie code', knipError ? 'skipped' : zLines ? `${n(zLines)} lines · ${plural(z.files.length, 'file')}` : 'none', knipError ? 'warn' : zLines ? 'warn' : 'ok'],
     ['sprawl', [sp.overlaps.length && plural(sp.overlaps.length, 'library overlap'), sp.dupes?.length && plural(sp.dupes.length, 'copy-paste'), sp.versions.length && plural(sp.versions.length, 'versioned copy', 'versioned copies').replace('copys', 'copies')].filter(Boolean).join(' · ') || 'none', sp.overlaps.length || sp.dupes?.length || sp.versions.length ? 'warn' : 'ok'],
@@ -71,7 +72,7 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
 
   // ── security
   if (sec.length || audit.skipped) {
-    L.push('', rule('SECURITY', high ? red(`${n(high)} high`) : yellow(`${n(sec.length)} medium`)));
+    L.push('', rule('SECURITY', high ? red(`${n(high)} high`) : sec.length ? yellow(`${n(sec.length)} medium`) : green('nothing found')));
     for (const f of cap(sec)) {
       L.push(row(`${badge[f.severity](f.severity === 'high' ? ' HIGH ' : ' MED  ')}  ${f.title}`, '', 1));
       L.push(row(dim(f.where), '', 9));
@@ -88,6 +89,14 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
       L.push(row(dim(c.line ? `${c.file}:${c.line}` : c.file), '', 9));
     }
     L.push(...more(data.shortcuts));
+  }
+
+  // ── the approved rules this code breaks
+  const bp = data.blueprint?.broken || [];
+  if (bp.length) {
+    L.push('', rule('BLUEPRINT', red(plural(bp.length, 'break'))));
+    for (const b of cap(bp)) L.push(row(`${red('✗')} ${b.why}`), row(dim(b.file), '', 4));
+    L.push(...more(bp));
   }
 
   // ── zombie code, grouped by folder
@@ -147,6 +156,39 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
   if (out) L.push(row(`${dim('report')} ${fit(out, W - 10)}`));
   if (failOn) L.push(row(failing.length ? red(`✗ ${plural(failing.length, 'finding')} at or above ${failOn}${baseline ? ', new since the baseline' : ''}`) : green(`✓ nothing ${baseline ? 'new ' : ''}at or above ${failOn}`)));
   return L;
+}
+
+// `zomb blueprint`: the proposed rules with their evidence, what breaks them today, and how to save them.
+export function renderBlueprint(rules, today, { repo, width = 80, color = true, exists = false, write = false, file = '.zomb/blueprint.yml' }) {
+  const { W, bold, dim, yellow, green, cyan, n, plural, row, rule, frame } = ui({ width, color });
+  const TITLES = { libraries: 'one library per job', folders: 'where new files go', naming: 'how files are named', imports: 'no ../../../', api: 'routes that change data', files: 'size limit' };
+  const L = ['', ...frame(`${bold('zomb blueprint')}  ${repo}`, dim(plural(rules.length, 'rule')), [dim('the rules this code already follows, for you to approve')])];
+  for (const section of [...new Set(rules.map((r) => r.section))]) {
+    L.push('', rule(section.toUpperCase(), dim(TITLES[section])));
+    for (const r of rules.filter((x) => x.section === section)) {
+      const k = new Set(today.filter((b) => b.rule === `${section}.${r.key}`).map((b) => b.file)).size;
+      const left = `${cyan(r.key.padEnd(12))}${bold(String(r.value))}`;
+      const right = `${dim(r.evidence)}${k ? yellow(`  ✗ ${plural(k, 'file')}`) : ''}`;
+      // evidence goes under the rule when both don't fit on one line
+      if (visible(left) + visible(right) + 6 <= W) L.push(row(left, right));
+      else L.push(row(left), row(right, '', 14));
+    }
+  }
+  const files = [...new Set(today.map((b) => b.file))];
+  if (today.length) {
+    L.push('', rule('BREAKS TODAY', yellow(plural(files.length, 'file'))));
+    for (const b of today.slice(0, 5)) L.push(row(`${yellow('✗')} ${b.why}`), row(dim(b.file), '', 4));
+    if (today.length > 5) L.push(dim(`  …and ${n(today.length - 5)} more`));
+  }
+  L.push('');
+  if (write && !exists) {
+    L.push(row(`${green('✓')} saved ${cyan(file)}`), row(dim('Commit it. Guard now enforces it on every agent edit, and the scan on every PR.'), '', 4));
+    if (today.length) L.push(row(`${dim('accept the breaks you have today:')} ${cyan('zomb --save-baseline')}`, '', 4));
+  } else {
+    if (exists) L.push(row(`${yellow('!')} ${file} already exists: this is a fresh proposal to compare with it`));
+    if (!write) L.push(row(`${cyan('zomb blueprint --write')} ${dim(`saves it to ${file}`)}`));
+  }
+  return `${L.join('\n')}\n`;
 }
 
 // A one-line spinner on stderr while the scan runs; silent when stderr isn't a terminal.

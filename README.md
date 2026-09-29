@@ -38,6 +38,34 @@ When something is deliberate, `// zomb-allow: <why>` on that line lets it throug
 { "hooks": { "PreToolUse": [ { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "zomb guard" } ] } ] } }
 ```
 
+## Blueprint: your codebase's rules, enforced on every agent
+
+```bash
+zomb blueprint            # propose the rules this code already follows
+zomb blueprint --write    # approve them: saves .zomb/blueprint.yml (commit it)
+```
+
+zomb reads the code and proposes only rules it mostly follows already, each with its evidence:
+
+```yaml
+libraries:
+  icons: "react-icons"          # 5 files; also lucide-react (1)
+  http: "fetch"                 # 4 files
+folders:
+  components: "src/components"  # 31 of 31 components
+  shared: "src/lib"             # 5 files
+naming:
+  components: "PascalCase"      # 27 of 27 component files
+imports:
+  alias: "@/"                   # 26 files import through it
+api:
+  auth: "required"              # 5 of 6 routes that change data check auth
+files:
+  maxLines: 500                 # 3 files over it today
+```
+
+Edit it freely. Once it exists, Guard blocks agent edits that break it (a second icon library even when both are installed, a component outside `src/components/`, a `../../../` import, a route that changes data with no auth check, a file growing past the limit), and the scan reports every break as a high finding, so `--fail-on high` holds each PR to it. To accept the breaks you have today, run `zomb --save-baseline` after writing it. A route that is public on purpose takes `// zomb-allow: public`.
+
 ## Clean up automatically
 
 ```bash

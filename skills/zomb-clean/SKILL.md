@@ -48,6 +48,9 @@ If `zomb fix` is not available, do the same by hand: batches of up to 10, checks
 
 ## 5. Needs a yes (every other task)
 
+Tasks with area `blueprint` break a rule the team approved in `.zomb/blueprint.yml`: switch to the named library, move or rename the file, import through the alias, or add the auth check. Never edit the blueprint to make a break go away; ask the user if a rule looks wrong.
+
+
 Libraries doing the same job, versioned copies, duplicated code, "maybe" routes, import cycles and oversized files all change how the code is organised. List them with one line each and ask which to do. Do one at a time, with the checks after each.
 
 ## 6. Report

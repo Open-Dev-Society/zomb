@@ -5,7 +5,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { lineShortcuts } from './diff.js';
 import { originalOf, packageOf, sameJob, isTest } from './score.js';
-import { findSecrets, publicSecretNames, findDangerous, isEnvFile } from './security.js';
+import { findSecrets, publicSecretNames, findDangerous, isEnvFile, routeFacts } from './security.js';
+import { breaks, readBlueprint, FILE as BLUEPRINT } from './blueprint.js';
 
 const CODE = /\.[cm]?[jt]sx?$/;
 const FIX = {
@@ -17,6 +18,8 @@ const FIX = {
   'Casts to any': 'Give it a real type.',
   'Swallows errors in an empty catch': 'Handle or log the error.',
 };
+const RULE_FIX = { libraries: 'Use that one instead of adding another.', folders: 'Create the file there instead.', naming: 'Name the file to match.', imports: 'Use the alias.', api: 'Add the auth check the other routes use, or `// zomb-allow: public` if it is public on purpose.', files: 'Split the file by job instead of growing it.' };
+const ruleBreak = (b) => `blueprint: ${b.why}. ${RULE_FIX[b.rule.split('.')[0]]} (The rules are in ${BLUEPRINT}.)`;
 
 // Lines that exist after the edit but not before: the only ones this edit is responsible for.
 function addedLines(input, root) {
@@ -37,6 +40,14 @@ function addedLines(input, root) {
   return { isNew: before === null, before, lines };
 }
 
+// The whole file as it will be after this edit
+function afterEdit(input, before) {
+  if (input.content !== undefined) return input.content;
+  let text = before || '';
+  for (const e of input.edits || [input]) text = e.replace_all ? text.split(e.old_string).join(e.new_string) : text.replace(e.old_string, () => e.new_string);
+  return text;
+}
+
 // input: the hook's tool_input { file_path, content | old_string/new_string | edits }. -> { deny:[], warn:[] } of "line N: …" strings
 export function check(input, root) {
   const deny = [];
@@ -44,6 +55,10 @@ export function check(input, root) {
   const rel = path.relative(root, path.resolve(root, input.file_path));
   if (!input.file_path || rel.startsWith('..') || /(^|\/)(node_modules|\.git|\.zomb)\//.test(rel)) return { deny, warn };
   const { isNew, before, lines } = addedLines(input, root);
+  let rules = null;
+  try {
+    rules = readBlueprint(root);
+  } catch {} // a broken blueprint must not block every edit; the scan reports it
   const allowed = (text) => /zomb-allow/.test(text);
   const code = CODE.test(rel);
 
@@ -77,6 +92,12 @@ export function check(input, root) {
   const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
   const imported = new Set(lines.flatMap((l) => [...l.text.matchAll(/(?:from\s+|import\s*\(?\s*|require\(\s*)['"]([^'"./][^'"]*)['"]/g)].map((m) => packageOf(m[1]))));
   for (const p of imported) {
+    // the blueprint names the library for each job, even when both are installed
+    const ruled = rules ? breaks(rules, { file: rel, packages: [p], placed: false }) : [];
+    if (ruled.length) {
+      deny.push(...ruled.map(ruleBreak));
+      continue;
+    }
     if (deps.includes(p)) continue;
     const overlap = sameJob(p, deps);
     if (overlap) deny.push(`${p} is a new ${overlap.job.replace(/s$/, '')}, but this repo already uses ${overlap.existing.join(' and ')}. Use ${overlap.existing[0]} instead of adding a second one.`);
@@ -92,9 +113,21 @@ export function check(input, root) {
     }
   }
 
-  // growing past 500 lines: say so once, when it crosses
+  if (rules) {
+    // where a new file goes and what it's called; ../../../ in the lines being added
+    if (isNew) deny.push(...breaks(rules, { file: rel }).map(ruleBreak));
+    const deep = lines.filter((l) => !allowed(l.text) && /(?:from\s+|import\s*\(?\s*|require\(\s*)['"](\.\.\/){3,}/.test(l.text)).length;
+    deny.push(...breaks(rules, { file: rel, deep, placed: false }).map(ruleBreak));
+    // an API route that changes data without an auth check: blocked when this edit causes it, noted when it was already so
+    const route = routeFacts(rel, afterEdit(input, before));
+    const open = (facts) => breaks(rules, { file: rel, route: facts, placed: false });
+    if (route && open(route).length) (isNew || !open(routeFacts(rel, before)).length ? deny : warn).push(...open(route).map(ruleBreak));
+  }
+
+  // growing past the line limit: say so once, when it crosses (a blueprint limit blocks, the default one only notes)
+  const max = rules?.files?.maxLines || 500;
   const after = isNew ? (input.content || '').split('\n').length : (before || '').split('\n').length + lines.length;
-  if (after >= 500 && (isNew || (before || '').split('\n').length < 500)) warn.push(`${rel} is now about ${after} lines. Consider splitting it by job.`);
+  if (after > max && (isNew || (before || '').split('\n').length <= max)) (rules?.files?.maxLines ? deny : warn).push(rules?.files?.maxLines ? ruleBreak({ rule: 'files.maxLines', why: `${rel} would be about ${after} lines, over the ${max}-line limit` }) : `${rel} is now about ${after} lines. Consider splitting it by job.`);
 
   return { deny, warn };
 }

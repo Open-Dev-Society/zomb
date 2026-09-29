@@ -10,7 +10,8 @@ import { parseAll, dependents, touches, clones, orphanRoutes } from './signals.j
 import { scanRepo, npmAudit, openRoute, hasAuthSignal, securityFindings } from './security.js';
 import { renderReport } from './report.js';
 import { toTasks, fingerprint, toMarkdown } from './tasks.js';
-import { render, spinner, ui } from './terminal.js';
+import { render, spinner, ui, renderBlueprint } from './terminal.js';
+import { infer, toRules, breaks, toYaml, readBlueprint, FILE as BLUEPRINT } from './blueprint.js';
 import { fix } from './fix.js';
 import { changesSince, scopeTo, shortcuts } from './diff.js';
 
@@ -34,6 +35,7 @@ try {
     'save-baseline': { type: 'boolean', default: false },
     'dry-run': { type: 'boolean', default: false },
     'no-checks': { type: 'boolean', default: false },
+    write: { type: 'boolean', default: false },
   },
   });
 } catch (e) {
@@ -49,6 +51,7 @@ ${bold('zomb')}  ${dim('a health check for codebases written with AI')}
 ${rule('COMMANDS')}
 ${cmd('zomb [path]', 'scan: security, zombie code, sprawl, architecture')}
 ${cmd('zomb fix [path]', 'delete dead code on a branch, gated by your build')}
+${cmd('zomb blueprint [path]', 'infer the rules this code follows; --write saves them')}
 ${cmd('zomb guard', 'Claude Code hook: blocks bad edits as they happen')}
 
 ${rule('SCAN')}
@@ -66,13 +69,15 @@ ${cmd('--no-checks', 'skip the typecheck, lint, test and build gate')}
 `);
   process.exit(0);
 }
-// `zomb fix [path]` does the safe clean-up; plain `zomb [path]` reports
-const command = positionals[0] === 'fix' ? positionals.shift() : 'scan';
+// `zomb fix [path]` does the safe clean-up, `zomb blueprint [path]` proposes rules; plain `zomb [path]` reports
+const command = ['fix', 'blueprint'].includes(positionals[0]) ? positionals.shift() : 'scan';
 const LEVELS = { high: ['high'], medium: ['high', 'medium'], low: ['high', 'medium', 'low'] };
 const exec = promisify(execFile);
 const sh = (cmd, args, cwd) => exec(cmd, args, { cwd, maxBuffer: 512 * 1024 * 1024 }).then((r) => r.stdout);
 const CODE = /\.[cm]?[jt]sx?$/;
 const OWN = [':!.zomb', ':!*zomb-report*.html'];
+// ignore everything in .zomb/ except the baseline and blueprint, which are meant to be committed
+const ZOMB_IGNORE = '*\n!baseline.json\n!blueprint.yml\n';
 
 const target = path.resolve(positionals[0] || '.');
 if (!existsSync(target)) fail(`${target} does not exist`);
@@ -204,8 +209,16 @@ const dupes = copies && copies.sort((x, y) => y.lines - x.lines);
 // ---------- architecture ----------
 const dependentsOf = dependents(parsed);
 const loops = cycles(new Map([...parsed].map(([f, p]) => [f, p.runtime])));
+// ---------- blueprint: the rules you approved. It takes over the file-size check when it sets one.
+let rules = null;
+try {
+  rules = readBlueprint(root);
+} catch (e) {
+  fail(`${BLUEPRINT} isn't valid YAML: ${e.message.split('\n')[0]}`);
+}
+const broken = rules ? [...parsed].filter(([f]) => !isTest(f)).flatMap(([file, p]) => breaks(rules, { file, packages: p.packages, deep: p.deep, route: middlewareAuth ? null : p.route, lines: p.lines }).map((b) => ({ file, ...b }))) : [];
 const big = [...parsed]
-  .filter(([f, p]) => p.lines >= 500 && !isTest(f))
+  .filter(([f, p]) => p.lines >= 500 && !isTest(f) && !rules?.files?.maxLines)
   .map(([f, p]) => ({ file: f, lines: p.lines, dependents: dependentsOf.get(f) || 0 }))
   .sort((a, b) => b.lines - a.lines);
 const deep = [...parsed].filter(([f, p]) => p.deep && !isTest(f)).map(([f, p]) => ({ file: f, count: p.deep })).sort((a, b) => b.count - a.count);
@@ -221,6 +234,7 @@ let data = {
   security: { findings: security, audit, middlewareAuth: Boolean(middlewareAuth), middleware, inTests: scan.inTests },
   sprawl: { months, recent, dupes, names: sameNames(parsed), versions: versionSprawl(files), overlaps: overlaps(packages) },
   architecture: { cycles: loops, big, shared: sharedFolders(files), deep, naming: namingStyles(files) },
+  blueprint: rules && { broken },
 };
 // --since: report only what this change touched, plus the shortcuts it took
 if (opts.since) {
@@ -230,6 +244,20 @@ if (opts.since) {
 }
 const tasks = toTasks(data);
 
+if (command === 'blueprint') {
+  const proposal = infer(parsed, { middlewareAuth });
+  const today = [...parsed].filter(([f]) => !isTest(f)).flatMap(([file, p]) => breaks(toRules(proposal), { file, packages: p.packages, deep: p.deep, route: middlewareAuth ? null : p.route, lines: p.lines }).map((b) => ({ file, ...b })));
+  const target = path.join(root, BLUEPRINT);
+  const exists = existsSync(target);
+  const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+  console.log(renderBlueprint(proposal, today, { repo: data.repo, width: process.stdout.columns || 80, color, exists, write: opts.write }));
+  if (!opts.write) process.exit(0);
+  if (exists) fail(`${BLUEPRINT} already exists. Edit it, or delete it and run zomb blueprint --write again.`);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, toYaml(proposal, data.repo));
+  await writeFile(path.join(root, '.zomb', '.gitignore'), ZOMB_IGNORE);
+  process.exit(0);
+}
 if (command === 'fix') process.exit(await fix({ root, data, dryRun: opts['dry-run'], noChecks: opts['no-checks'], color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR, width: process.stdout.columns || 80 }));
 
 // Baseline: the findings you already have. With one saved, only new findings fail --fail-on.
@@ -269,8 +297,8 @@ if (opts.markdown) {
 // The report goes in .zomb/ (ignored by git) unless --out says otherwise; the baseline next to it is meant to be committed.
 const out = opts.out ? path.resolve(opts.out) : path.join(root, '.zomb', 'report.html');
 await mkdir(path.dirname(out), { recursive: true });
-// ignore everything in .zomb/ except the baseline, which is meant to be committed
-if (!opts.out && !existsSync(path.join(root, '.zomb', '.gitignore'))) await writeFile(path.join(root, '.zomb', '.gitignore'), '*\n!baseline.json\n');
+const ignore = path.join(root, '.zomb', '.gitignore');
+if (!opts.out && (!existsSync(ignore) || (await readFile(ignore, 'utf8')) !== ZOMB_IGNORE)) await writeFile(ignore, ZOMB_IGNORE);
 await writeFile(out, renderReport(data));
 
 // ---------- terminal summary ----------

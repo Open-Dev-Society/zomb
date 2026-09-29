@@ -70,7 +70,13 @@ function architectureSection({ cycles, big, shared, deep, naming }) {
   </section>`;
 }
 
-export function renderReport({ repo, commit, date, files, lines, knipError, zombie, security, sprawl, architecture, shortcuts, since }) {
+function blueprintSection(blueprint) {
+  if (!blueprint) return '';
+  return `<section id="blueprint"><h2>Blueprint</h2>
+  <p class="muted">The rules in <code>.zomb/blueprint.yml</code>: the libraries, folders, names and limits this codebase agreed on.</p>
+  ${blueprint.broken.length ? `<ul class="items">${blueprint.broken.map((b) => `<li><span class="sev high">rule</span><div><b>${esc(b.why)}</b> ${code(b.file)}</div></li>`).join('')}</ul>` : '<p>Every file follows it.</p>'}</section>`;
+}
+export function renderReport({ repo, commit, date, files, lines, knipError, zombie, security, sprawl, architecture, shortcuts, since, blueprint }) {
   const high = security.findings.filter((f) => f.severity === 'high').length;
   const zLines = zombie.files.reduce((s, f) => s + f.lines, 0);
   const added = sprawl.recent.reduce((s, m) => s + m.added, 0);
@@ -103,6 +109,7 @@ ${card('sprawl', added ? n(Math.round((deleted / added) * 100)) : '–', 'delete
 ${card('architecture', n(architecture.cycles.length), 'import cycles', `${plural(architecture.big.length, 'file')} over 500 lines`)}
 </div>
 ${securitySection(security)}
+${blueprintSection(blueprint)}
 ${shortcutsSection(shortcuts)}
 ${zombieSection(zombie, knipError)}
 ${sprawlSection(sprawl)}

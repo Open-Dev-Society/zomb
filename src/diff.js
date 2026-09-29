@@ -114,6 +114,7 @@ export function scopeTo(data, { changed, diff }) {
       versions: data.sprawl.versions.filter((v) => (v.files ? inFolder(v.path) : touched(v.path))),
       overlaps: pkgChanged ? data.sprawl.overlaps : [],
     },
+    blueprint: data.blueprint && { broken: data.blueprint.broken.filter((b) => touched(b.file)) },
     architecture: {
       cycles: data.architecture.cycles.filter((c) => c.some(touched)),
       big: data.architecture.big.filter((b) => touched(b.file)),

@@ -80,7 +80,8 @@ const AUTH_SIGNAL = /\b(auth|getServerSession|getSession|currentUser|getToken|ge
 export function routeFacts(file, src) {
   if (!API_ROUTE.test(file)) return null;
   const mutates = /export\s+(async\s+)?(function|const)\s+(POST|PUT|PATCH|DELETE)\b/.test(src) || (/(^|\/)pages\/api\//.test(file) && /req\.method/.test(src));
-  return { mutates, authSignal: AUTH_SIGNAL.test(src) };
+  // `zomb-allow` anywhere in the file: public on purpose (a contact form, a public API)
+  return { mutates, authSignal: AUTH_SIGNAL.test(src), public: /zomb-allow/.test(src) };
 }
 export const hasAuthSignal = (src) => AUTH_SIGNAL.test(src);
 // app/api/users/[id]/route.ts -> /api/users/[id]
@@ -109,7 +110,7 @@ export function securityFindings({ secrets, envFiles, publicVars, dangerous, ope
 
 // A route that changes data, or touches the database or payments, with no sign of auth anywhere in it or its imports.
 export function openRoute(facts, touches) {
-  if (!facts || facts.authSignal || touches.includes('auth')) return null;
+  if (!facts || facts.authSignal || facts.public || touches.includes('auth')) return null;
   const risky = touches.filter((t) => t === 'database' || t === 'payments');
   if (!facts.mutates && !risky.length) return null;
   return [facts.mutates && 'changes data', risky.length && `touches ${risky.join(' and ')}`].filter(Boolean).join(' and ');
