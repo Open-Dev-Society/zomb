@@ -168,3 +168,23 @@ test('scopeTo keeps only what the change touched', async () => {
   assert.deepEqual(s.architecture.cycles, [['a.ts', 'z.ts']]);
   assert.deepEqual(s.sprawl.overlaps, []);
 });
+
+test('terminal output never wraps, at any width', async () => {
+  const { render, visible } = await import('../src/terminal.js');
+  const long = 'src/components/features/dashboard/analytics/really-long-folder-name/SomeVeryLongComponentName.tsx';
+  const data = {
+    repo: 'a-repo-with-a-fairly-long-name', files: 1234, lines: 123456,
+    security: { findings: [{ severity: 'high', title: 'NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY is shipped to every browser', where: `${long}, ${long}` }, { severity: 'medium', title: '/api/users/[id]/settings changes data and touches database with no visible auth check', where: long }] },
+    shortcuts: [{ severity: 'high', kind: 'Focuses one test, so CI silently skips the rest', file: long, line: 12 }],
+    zombie: { files: [{ path: long, lines: 1264, why: 'Nothing imports or names it', share: 1 }, { path: 'x.ts', lines: 3, why: 'Only its own tests import it' }], packages: ['@radix-ui/react-dropdown-menu', 'tailwind-merge', 'framer-motion', 'react-circle-flags', 'country-data-list'].map((name) => ({ name })), exports: [{ file: long, names: ['a', 'b'] }], maybe: [{ url: '/api/some/very/long/route/that/nobody/calls/anymore', file: long }] },
+    sprawl: { dupes: [{ lines: 30, a: { file: long }, b: { file: long } }], names: [{ name: 'formatCurrencyWithLocaleAndFallbackSymbol', files: [long, long] }], versions: [{ path: long, original: long }, { path: 'components/ov2/', files: 75 }], overlaps: [{ job: 'icon sets', libraries: [{ name: '@phosphor-icons/react', files: 40 }, { name: 'react-icons', files: 3 }, { name: '@heroicons/react', files: 1 }] }] },
+    architecture: { cycles: [[long, long, long, long]], big: [{ file: long, lines: 1727 }], deep: [{ file: long, count: 3 }], shared: ['src/lib', 'src/utils', 'app/helpers', 'packages/shared/src/core'], naming: [] },
+  };
+  const tasks = [{ safe: true }, { safe: false }];
+  for (const width of [50, 60, 80, 120]) {
+    const lines = render(data, tasks, { width, color: true, all: true, recent: [{ added: 34628, deleted: 15120 }], out: `/Users/someone/projects/${long}/.zomb/report.html`, failOn: 'high', failing: [1] });
+    const widest = Math.max(...lines.map(visible));
+    assert.ok(widest <= Math.max(48, Math.min(width - 1, 80)), `width ${width}: a line is ${widest} columns`);
+    assert.ok(lines.every((l) => !/ $/.test(l.replace(/\x1b\[[0-9;]*m/g, ''))), 'no trailing spaces');
+  }
+});

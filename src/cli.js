@@ -10,6 +10,7 @@ import { parseAll, dependents, touches, clones, orphanRoutes } from './signals.j
 import { scanRepo, npmAudit, openRoute, hasAuthSignal, securityFindings } from './security.js';
 import { renderReport } from './report.js';
 import { toTasks, fingerprint, toMarkdown } from './tasks.js';
+import { render, spinner } from './terminal.js';
 import { changesSince, scopeTo, shortcuts } from './diff.js';
 
 const { values: opts, positionals } = parseArgs({
@@ -94,17 +95,19 @@ const all = [...new Set((await sh('git', ['ls-files', '--cached', '--others', '-
 const tracked = new Set((await sh('git', ['ls-files'], root)).split('\n').filter(Boolean));
 const files = all.filter((f) => CODE.test(f) && !/\.d\.[cm]?ts$/.test(f));
 if (!files.length) fail(`no JS/TS files tracked in ${root}`);
-log(`scanning ${files.length} JS/TS files in ${root}`);
+const spin = opts.json || opts.markdown ? { step() {}, stop() {} } : spinner(`scanning ${files.length} files`);
+if (!process.stderr.isTTY) log(`scanning ${files.length} JS/TS files in ${root}`);
+const track = (name, p) => p.then((v) => (spin.step(name), v));
 
 const middleware = files.find((f) => /(^|\/)middleware\.[cm]?[jt]s$/.test(f));
 const [knipOut, { agentOf, history }, parsed, copies, orphans, scan, audit, middlewareSrc] = await Promise.all([
-  knip(),
-  commits(),
-  parseAll(root, files),
-  clones(root, files),
-  orphanRoutes(root, files),
-  scanRepo(root, all, tracked),
-  npmAudit(root),
+  track('imports', knip()),
+  track('history', commits()),
+  track('code', parseAll(root, files)),
+  track('copy-paste', clones(root, files)),
+  track('routes', orphanRoutes(root, files)),
+  track('secrets', scanRepo(root, all, tracked)),
+  track('packages', npmAudit(root)),
   middleware ? readFile(path.join(root, middleware), 'utf8') : '',
 ]);
 
@@ -125,6 +128,7 @@ for (;;) {
   named.forEach((f) => live.add(f));
 }
 const zombieFiles = [...unused, ...onlyTests].filter((f) => !refs.get(f) && !live.has(f));
+spin.stop();
 const byAgent = await authorship(zombieFiles, agentOf);
 const zombies = zombieFiles
   .map((f) => ({ path: f, lines: parsed.get(f).lines, why: unused.has(f) ? 'Nothing imports or names it' : 'Only its own tests import it', ...byAgent.get(f) }))
@@ -222,55 +226,17 @@ if (!opts.out && !existsSync(path.join(root, '.zomb', '.gitignore'))) await writ
 await writeFile(out, renderReport(data));
 
 // ---------- terminal summary ----------
-const tty = process.stdout.isTTY && !process.env.NO_COLOR;
-const paint = (code) => (s) => (tty ? `\x1b[${code}m${s}\x1b[0m` : String(s));
-const [bold, dim, red, yellow, green] = [paint(1), paint(2), paint(31), paint(33), paint(32)];
-const n = (x) => x.toLocaleString('en-US');
-const plural = (k, word) => `${n(k)} ${word}${k === 1 ? '' : 's'}`;
-const cap = opts.all ? Infinity : 5;
-const rest = (list) => (list.length > cap ? [dim(`  …and ${n(list.length - cap)} more (see the report, or run with --all)`)] : []);
-const section = (title, line) => console.log(`\n${bold(title)}  ${line}`);
-const row = (s) => console.log(`  ${s}`);
-
-const sec = data.security.findings;
-const high = sec.filter((f) => f.severity === 'high').length;
-section('SECURITY', sec.length ? `${red(`${high} high`)} · ${yellow(`${sec.length - high} medium`)}` : green('nothing found'));
-for (const f of sec.slice(0, cap)) row(`${(f.severity === 'high' ? red : yellow)(f.severity.padEnd(6))}  ${f.title}  ${dim(f.where)}`);
-for (const l of rest(sec)) console.log(l);
-if (audit.skipped) row(dim(`vulnerable packages not checked: ${audit.skipped}`));
-
-if (data.shortcuts) {
-  const sc = data.shortcuts;
-  const color = (sev) => (sev === 'high' ? red : sev === 'medium' ? yellow : dim);
-  section('SHORTCUTS', sc.length ? `${plural(sc.length, 'place')} this change silences or skips a check` : green('none: no suppressions, skipped or deleted tests'));
-  for (const c of sc.slice(0, cap)) row(`${color(c.severity)(c.severity.padEnd(6))}  ${c.kind}  ${dim(c.line ? `${c.file}:${c.line}` : c.file)}`);
-  for (const l of rest(sc)) console.log(l);
-}
-
-const z = data.zombie;
-const zLines = z.files.reduce((s, f) => s + f.lines, 0);
-section('ZOMBIE CODE', knipOut.error ? yellow('skipped (Knip failed)') : `${bold(`${n(zLines)} lines`)} in ${plural(z.files.length, 'file')} · ${plural(z.packages.length, 'unused package')} · ${plural(z.exports.reduce((s, e) => s + e.names.length, 0), 'dead export')}`);
-for (const f of z.files.slice(0, cap)) row(`${f.path}  ${dim(`${n(f.lines)} lines · ${f.why.toLowerCase()}${f.share >= 0.5 ? ` · ${Math.round(f.share * 100)}% by ${f.agents.join(', ')}` : ''}`)}`);
-for (const l of rest(z.files)) console.log(l);
-if (z.packages.length) row(`unused packages: ${z.packages.map((p) => p.name).join(', ')}`);
-if (z.maybe.length) row(`maybe zombie: ${z.maybe.map((m) => m.url).join(', ')} ${dim('(nothing in the repo links to them)')}`);
-
-const sp = data.sprawl;
-const added = recent.reduce((s, m) => s + m.added, 0), deleted = recent.reduce((s, m) => s + m.deleted, 0);
-section('SPRAWL', data.since ? dim(`in this change`) : added ? `last 3 months: ${n(added)} lines added, ${n(deleted)} deleted ${bold(`(${Math.round((deleted / added) * 100)} deleted per 100 added)`)}` : dim('no commits in the last 3 months'));
-for (const o of sp.overlaps) row(`${o.libraries.length} ${o.job}: ${o.libraries.map((l) => `${l.name} ${dim(`(${l.files})`)}`).join(', ')}`);
-for (const v of sp.versions.slice(0, cap)) row(`${v.path}  ${dim(v.original ? `next to ${v.original}` : v.files ? `versioned folder, ${plural(v.files, 'file')}` : 'versioned copy')}`);
-for (const x of sp.names.slice(0, cap)) row(`${x.name}  ${dim(`defined in ${plural(x.files.length, 'file')}`)}`);
-if (sp.dupes?.length) row(`${plural(sp.dupes.length, 'copy-pasted block')} ${dim(`(${n(sp.dupes.reduce((s, d) => s + d.lines, 0))} lines)`)}`);
-
-const a = data.architecture;
-section('ARCHITECTURE', [plural(a.cycles.length, 'import cycle'), `${plural(a.big.length, 'file')} over 500 lines`, a.shared.length > 1 && `shared code in ${a.shared.length} folders`, a.deep.length && `${plural(a.deep.length, 'file')} with ../../../ imports`].filter(Boolean).join(' · '));
-for (const c of a.cycles.slice(0, cap)) row(`cycle: ${dim(c.slice(0, 4).join(' → '))}${c.length > 4 ? dim(` +${c.length - 4}`) : ''}`);
-for (const b of a.big.slice(0, cap)) row(`${b.file}  ${dim(`${n(b.lines)} lines`)}`);
-
-const safe = tasks.filter((t) => t.safe).length;
-const fresh = baseline ? tasks.filter((t) => t.new).length : null;
-console.log(`\n${bold(`${plural(tasks.length, 'task')}`)} ${dim(`(${n(safe)} safe to automate${fresh !== null ? `, ${n(fresh)} new since the baseline` : ''})`)} · report: ${out}`);
-console.log(dim('Fix them with your agent: run /zomb-clean in Claude Code, or pipe `zomb --json` to any agent.'));
-if (opts['fail-on']) console.log(failing.length ? red(`✗ ${plural(failing.length, 'finding')} at or above ${opts['fail-on']}${baseline ? ' (new since the baseline)' : ''}`) : green(`✓ nothing at or above ${opts['fail-on']}${baseline ? ' that is new since the baseline' : ''}`));
+const lines = render(data, tasks, {
+  width: process.stdout.columns || 80,
+  color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR,
+  all: opts.all,
+  audit,
+  knipError: knipOut.error,
+  recent,
+  out: path.relative(process.cwd(), out) || out,
+  failing,
+  failOn: opts['fail-on'],
+  baseline,
+});
+console.log(`\n${lines.join('\n')}\n`);
 process.exit(failing.length ? 1 : 0);
