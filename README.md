@@ -160,6 +160,10 @@ Any other agent can follow [skills/zomb-guard/SKILL.md](skills/zomb-guard/SKILL.
 - Key-shaped strings in test files are counted, not listed: tests use fakes to check redaction.
 - If your `middleware.ts` checks auth, API routes aren't checked one by one.
 
+## zomb Cloud
+
+A GitHub App version, self-hostable: a check and a comment on every PR without a workflow file, trends across repos, and a weekly clean-up issue handed to Claude or Copilot. See [cloud/README.md](cloud/README.md).
+
 ## Develop
 
 ```bash

@@ -284,6 +284,7 @@ if (opts.json) {
     shortcuts: data.shortcuts?.length || 0,
     zombie: { files: z.files.length, lines: z.files.reduce((s, f) => s + f.lines, 0), packages: z.packages.length, exports: z.exports.reduce((s, e) => s + e.names.length, 0) },
     architecture: { cycles: data.architecture.cycles.length, bigFiles: data.architecture.big.length },
+    blueprint: data.blueprint ? data.blueprint.broken.length : null,
   };
   console.log(JSON.stringify({ repo: data.repo, commit: data.commit, since: data.since || null, baseline: Boolean(baseline), failing: failing.length, summary, tasks }, null, 2));
   done();
