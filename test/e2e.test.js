@@ -59,7 +59,6 @@ test('zomb --json finds every planted mistake', () => {
     assert.ok(summary.security.high >= 5);
     assert.ok(tasks.filter((t) => t.safe).every((t) => t.area === 'zombie'), 'only zombie clean-up is safe to automate');
 
-    // The gate: save a baseline, then only new problems fail.
     const run = (...args) => {
       try {
         return { code: 0, out: execFileSync(process.execPath, [cli, dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) };
@@ -67,6 +66,14 @@ test('zomb --json finds every planted mistake', () => {
         return { code: e.status, out: e.stdout };
       }
     };
+    // zomb must not read its own report: it lists the dead files, which would make them look "mentioned" next run.
+    const deadFiles = (out) => JSON.parse(out).tasks.filter((t) => t.action === 'delete-file').map((t) => t.where).sort();
+    const before = deadFiles(run('--json').out);
+    run();
+    run();
+    assert.deepEqual(deadFiles(run('--json').out), before, 'writing the report must not change the next result');
+
+    // The gate: save a baseline, then only new problems fail.
     assert.equal(run('--fail-on', 'high', '--json').code, 1, 'known problems fail before there is a baseline');
     run('--save-baseline');
     assert.equal(run('--fail-on', 'high', '--json').code, 0, 'known problems pass once they are in the baseline');

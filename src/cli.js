@@ -15,7 +15,7 @@ import { changesSince, scopeTo, shortcuts } from './diff.js';
 const { values: opts, positionals } = parseArgs({
   allowPositionals: true,
   options: {
-    out: { type: 'string', default: 'zomb-report.html' },
+    out: { type: 'string' },
     json: { type: 'boolean', default: false },
     markdown: { type: 'boolean', default: false },
     all: { type: 'boolean', default: false },
@@ -28,6 +28,7 @@ const LEVELS = { high: ['high'], medium: ['high', 'medium'], low: ['high', 'medi
 const exec = promisify(execFile);
 const sh = (cmd, args, cwd) => exec(cmd, args, { cwd, maxBuffer: 512 * 1024 * 1024 }).then((r) => r.stdout);
 const CODE = /\.[cm]?[jt]sx?$/;
+const OWN = [':!.zomb', ':!*zomb-report*.html'];
 
 const log = (msg) => process.stderr.write(`zomb: ${msg}\n`);
 const target = path.resolve(positionals[0] || '.');
@@ -83,7 +84,8 @@ async function authorship(files, agentOf) {
 // Knip follows imports only; files started by path (action.yml, spawn(), package.json scripts) look unused to it.
 async function referencedBy(file) {
   const needles = [path.basename(file), file.replace(/\.[^./]+$/, '').split('/').slice(-2).join('/')];
-  const out = await sh('git', ['grep', '-l', '--untracked', '-F', ...needles.flatMap((n) => ['-e', n]), '--', '.', `:!${file}`], root).catch(() => '');
+  // never count zomb's own report or baseline as a mention: they list the very files being judged
+  const out = await sh('git', ['grep', '-l', '--untracked', '-F', ...needles.flatMap((n) => ['-e', n]), '--', '.', `:!${file}`, ...OWN], root).catch(() => '');
   return out.split('\n')[0] || null;
 }
 
@@ -212,7 +214,11 @@ if (opts.markdown) {
   done();
 }
 
-const out = path.resolve(opts.out);
+// The report goes in .zomb/ (ignored by git) unless --out says otherwise; the baseline next to it is meant to be committed.
+const out = opts.out ? path.resolve(opts.out) : path.join(root, '.zomb', 'report.html');
+await mkdir(path.dirname(out), { recursive: true });
+// ignore everything in .zomb/ except the baseline, which is meant to be committed
+if (!opts.out && !existsSync(path.join(root, '.zomb', '.gitignore'))) await writeFile(path.join(root, '.zomb', '.gitignore'), '*\n!baseline.json\n');
 await writeFile(out, renderReport(data));
 
 // ---------- terminal summary ----------

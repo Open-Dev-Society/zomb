@@ -9,7 +9,7 @@ npx zomb              # run inside any git repo
 npx zomb path/to/repo --out report.html
 ```
 
-It prints a summary, writes a single HTML report, and your code never leaves your machine.
+It prints a summary and writes a single HTML report to `.zomb/report.html` (git-ignored). Your code never leaves your machine.
 
 ```bash
 zomb --all                # every finding in the terminal, not just the top 5
