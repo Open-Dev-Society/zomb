@@ -1,0 +1,655 @@
+{
+  "generated": "2026-09-30T00:12:48.296Z",
+  "since": "2025-10-01",
+  "depth": 400,
+  "repos": 336,
+  "commits": 52688,
+  "lines": 18719425,
+  "agents": [
+    {
+      "name": "Human",
+      "repos": 268,
+      "commits": 27119,
+      "added": 7955859,
+      "deleted": 2630866,
+      "medianCommit": 63,
+      "secrets": 23,
+      "metrics": {
+        "shortcutsPer1k": {
+          "value": 1.08,
+          "range": [
+            0.87,
+            1.31
+          ]
+        },
+        "deletedPer100": {
+          "value": 33.07,
+          "range": [
+            28.5,
+            38.14
+          ]
+        },
+        "deadPer1k": {
+          "value": 5.67,
+          "range": [
+            3.55,
+            8.14
+          ]
+        },
+        "versionedPer100Commits": {
+          "value": 0.03,
+          "range": [
+            0.01,
+            0.05
+          ]
+        },
+        "secretsPer1M": {
+          "value": 2.89,
+          "range": [
+            1.26,
+            4.66
+          ]
+        }
+      },
+      "shortcuts": {
+        "Casts to any": 0.58,
+        "Turns off a lint rule": 0.23,
+        "Silences the type checker": 0.16,
+        "Swallows errors in an empty catch": 0.08,
+        "Skips a test": 0.03,
+        "Special-cases the test environment": 0.01,
+        "Focuses one test, so CI silently skips the rest": 0
+      }
+    },
+    {
+      "name": "Claude",
+      "repos": 160,
+      "commits": 16047,
+      "added": 7170716,
+      "deleted": 1489146,
+      "medianCommit": 119,
+      "secrets": 3,
+      "metrics": {
+        "shortcutsPer1k": {
+          "value": 0.67,
+          "range": [
+            0.51,
+            0.87
+          ],
+          "vsHumans": {
+            "repos": 129,
+            "agent": 0.69,
+            "human": 1.05,
+            "ratioRange": [
+              0.49,
+              0.88
+            ]
+          }
+        },
+        "deletedPer100": {
+          "value": 20.77,
+          "range": [
+            16.38,
+            25.08
+          ],
+          "vsHumans": {
+            "repos": 129,
+            "agent": 20.99,
+            "human": 32.75,
+            "ratioRange": [
+              0.48,
+              0.84
+            ]
+          }
+        },
+        "deadPer1k": {
+          "value": 1.16,
+          "range": [
+            0.35,
+            2.32
+          ],
+          "vsHumans": {
+            "repos": 126,
+            "agent": 1.14,
+            "human": 3.73,
+            "ratioRange": [
+              0.1,
+              0.8
+            ]
+          }
+        },
+        "versionedPer100Commits": {
+          "value": 0.01,
+          "range": [
+            0,
+            0.02
+          ],
+          "vsHumans": {
+            "repos": 129,
+            "agent": 0.01,
+            "human": 0.02,
+            "ratioRange": [
+              0,
+              1.33
+            ]
+          }
+        },
+        "secretsPer1M": {
+          "value": 0.42,
+          "range": [
+            0.11,
+            0.88
+          ],
+          "vsHumans": {
+            "repos": 129,
+            "agent": 0.44,
+            "human": 1.38,
+            "ratioRange": [
+              0,
+              1.03
+            ]
+          }
+        }
+      },
+      "shortcuts": {
+        "Casts to any": 0.28,
+        "Turns off a lint rule": 0.25,
+        "Focuses one test, so CI silently skips the rest": 0.05,
+        "Silences the type checker": 0.05,
+        "Swallows errors in an empty catch": 0.03,
+        "Skips a test": 0.01,
+        "Special-cases the test environment": 0
+      }
+    },
+    {
+      "name": "Cursor",
+      "repos": 80,
+      "commits": 3861,
+      "added": 1825867,
+      "deleted": 462468,
+      "medianCommit": 142,
+      "secrets": 1,
+      "metrics": {
+        "shortcutsPer1k": {
+          "value": 1.34,
+          "range": [
+            0.41,
+            2.28
+          ],
+          "vsHumans": {
+            "repos": 66,
+            "agent": 1.45,
+            "human": 1.11,
+            "ratioRange": [
+              0.42,
+              2.39
+            ]
+          }
+        },
+        "deletedPer100": {
+          "value": 25.33,
+          "range": [
+            20.58,
+            30.03
+          ],
+          "vsHumans": {
+            "repos": 66,
+            "agent": 26.38,
+            "human": 29.97,
+            "ratioRange": [
+              0.72,
+              1.07
+            ]
+          }
+        },
+        "deadPer1k": {
+          "value": 5.19,
+          "range": [
+            0.76,
+            12.26
+          ],
+          "vsHumans": {
+            "repos": 64,
+            "agent": 5.49,
+            "human": 4.41,
+            "ratioRange": [
+              0.15,
+              4.88
+            ]
+          }
+        },
+        "versionedPer100Commits": {
+          "value": 0,
+          "range": [
+            0,
+            0
+          ],
+          "vsHumans": {
+            "repos": 66,
+            "agent": 0,
+            "human": 0.01,
+            "ratioRange": [
+              0,
+              0
+            ]
+          }
+        },
+        "secretsPer1M": {
+          "value": 0.55,
+          "range": [
+            0,
+            1.71
+          ],
+          "vsHumans": {
+            "repos": 66,
+            "agent": 0,
+            "human": 0.85,
+            "ratioRange": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "shortcuts": {
+        "Casts to any": 1.01,
+        "Silences the type checker": 0.1,
+        "Turns off a lint rule": 0.09,
+        "Swallows errors in an empty catch": 0.07,
+        "Skips a test": 0.06,
+        "Special-cases the test environment": 0
+      }
+    },
+    {
+      "name": "Codex",
+      "repos": 58,
+      "commits": 2434,
+      "added": 1021205,
+      "deleted": 244088,
+      "medianCommit": 115,
+      "secrets": 1,
+      "metrics": {
+        "shortcutsPer1k": {
+          "value": 0.55,
+          "range": [
+            0.25,
+            0.99
+          ],
+          "vsHumans": {
+            "repos": 45,
+            "agent": 0.56,
+            "human": 1.17,
+            "ratioRange": [
+              0.24,
+              0.84
+            ]
+          }
+        },
+        "deletedPer100": {
+          "value": 23.9,
+          "range": [
+            13.83,
+            32.38
+          ],
+          "vsHumans": {
+            "repos": 45,
+            "agent": 24.08,
+            "human": 22.2,
+            "ratioRange": [
+              0.61,
+              1.55
+            ]
+          }
+        },
+        "deadPer1k": {
+          "value": 0.5,
+          "range": [
+            0.13,
+            1.1
+          ],
+          "vsHumans": {
+            "repos": 43,
+            "agent": 0.51,
+            "human": 0.91,
+            "ratioRange": [
+              0.12,
+              7.75
+            ]
+          }
+        },
+        "versionedPer100Commits": {
+          "value": 0.04,
+          "range": [
+            0,
+            0.16
+          ],
+          "vsHumans": {
+            "repos": 45,
+            "agent": 0.04,
+            "human": 0,
+            "ratioRange": [
+              null,
+              null
+            ]
+          }
+        },
+        "secretsPer1M": {
+          "value": 0.98,
+          "range": [
+            0,
+            3.24
+          ],
+          "vsHumans": {
+            "repos": 45,
+            "agent": 1,
+            "human": 2.32,
+            "ratioRange": [
+              0,
+              2.66
+            ]
+          }
+        }
+      },
+      "shortcuts": {
+        "Casts to any": 0.36,
+        "Swallows errors in an empty catch": 0.07,
+        "Turns off a lint rule": 0.06,
+        "Skips a test": 0.04,
+        "Silences the type checker": 0.02,
+        "Special-cases the test environment": 0.01
+      }
+    },
+    {
+      "name": "Copilot",
+      "repos": 55,
+      "commits": 1843,
+      "added": 338852,
+      "deleted": 74054,
+      "medianCommit": 20,
+      "secrets": 0,
+      "metrics": {
+        "shortcutsPer1k": {
+          "value": 1.43,
+          "range": [
+            0.5,
+            3.13
+          ],
+          "vsHumans": {
+            "repos": 23,
+            "agent": 1.69,
+            "human": 0.85,
+            "ratioRange": [
+              0.65,
+              5.07
+            ]
+          }
+        },
+        "deletedPer100": {
+          "value": 21.85,
+          "range": [
+            15.49,
+            29.86
+          ],
+          "vsHumans": {
+            "repos": 23,
+            "agent": 18.4,
+            "human": 47.84,
+            "ratioRange": [
+              0.24,
+              0.64
+            ]
+          }
+        },
+        "deadPer1k": {
+          "value": 4.77,
+          "range": [
+            0.09,
+            12.32
+          ],
+          "vsHumans": {
+            "repos": 22,
+            "agent": 0.13,
+            "human": 9.38,
+            "ratioRange": [
+              0,
+              0.08
+            ]
+          }
+        },
+        "versionedPer100Commits": {
+          "value": 0,
+          "range": [
+            0,
+            0
+          ],
+          "vsHumans": {
+            "repos": 23,
+            "agent": 0,
+            "human": 0.02,
+            "ratioRange": [
+              0,
+              0
+            ]
+          }
+        },
+        "secretsPer1M": {
+          "value": 0,
+          "range": [
+            0,
+            0
+          ],
+          "vsHumans": {
+            "repos": 23,
+            "agent": 0,
+            "human": 6.34,
+            "ratioRange": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "shortcuts": {
+        "Casts to any": 1.06,
+        "Silences the type checker": 0.18,
+        "Turns off a lint rule": 0.09,
+        "Swallows errors in an empty catch": 0.08,
+        "Skips a test": 0.02
+      }
+    },
+    {
+      "name": "Devin",
+      "repos": 53,
+      "commits": 977,
+      "added": 327048,
+      "deleted": 119686,
+      "medianCommit": 46,
+      "secrets": 1,
+      "metrics": {
+        "shortcutsPer1k": {
+          "value": 1.59,
+          "range": [
+            0.49,
+            3.17
+          ],
+          "vsHumans": {
+            "repos": 22,
+            "agent": 2.07,
+            "human": 1.18,
+            "ratioRange": [
+              0.52,
+              3.4
+            ]
+          }
+        },
+        "deletedPer100": {
+          "value": 36.6,
+          "range": [
+            17.45,
+            64.56
+          ],
+          "vsHumans": {
+            "repos": 22,
+            "agent": 47.21,
+            "human": 40.83,
+            "ratioRange": [
+              0.65,
+              1.66
+            ]
+          }
+        },
+        "deadPer1k": {
+          "value": 2.54,
+          "range": [
+            0.67,
+            5.8
+          ],
+          "vsHumans": {
+            "repos": 22,
+            "agent": 1.11,
+            "human": 9.8,
+            "ratioRange": [
+              0.03,
+              0.53
+            ]
+          }
+        },
+        "versionedPer100Commits": {
+          "value": 0,
+          "range": [
+            0,
+            0
+          ],
+          "vsHumans": {
+            "repos": 22,
+            "agent": 0,
+            "human": 0.08,
+            "ratioRange": [
+              0,
+              0
+            ]
+          }
+        },
+        "secretsPer1M": {
+          "value": 3.06,
+          "range": [
+            0,
+            10.38
+          ],
+          "vsHumans": {
+            "repos": 22,
+            "agent": 0,
+            "human": 1.58,
+            "ratioRange": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "shortcuts": {
+        "Casts to any": 0.72,
+        "Turns off a lint rule": 0.43,
+        "Swallows errors in an empty catch": 0.43,
+        "Silences the type checker": 0
+      }
+    },
+    {
+      "name": "Jules",
+      "repos": 46,
+      "commits": 407,
+      "added": 79878,
+      "deleted": 22832,
+      "medianCommit": 49,
+      "secrets": 2,
+      "metrics": {
+        "shortcutsPer1k": {
+          "value": 1.99,
+          "range": [
+            1.1,
+            2.89
+          ],
+          "vsHumans": {
+            "repos": 19,
+            "agent": 2.4,
+            "human": 2.44,
+            "ratioRange": [
+              0.53,
+              1.78
+            ]
+          }
+        },
+        "deletedPer100": {
+          "value": 28.58,
+          "range": [
+            21.42,
+            36.6
+          ],
+          "vsHumans": {
+            "repos": 19,
+            "agent": 27.47,
+            "human": 45.94,
+            "ratioRange": [
+              0.42,
+              0.9
+            ]
+          }
+        },
+        "deadPer1k": {
+          "value": 10.15,
+          "range": [
+            0.36,
+            24.89
+          ],
+          "vsHumans": {
+            "repos": 19,
+            "agent": 2.7,
+            "human": 15.17,
+            "ratioRange": [
+              0.01,
+              1.2
+            ]
+          }
+        },
+        "versionedPer100Commits": {
+          "value": 0,
+          "range": [
+            0,
+            0
+          ],
+          "vsHumans": {
+            "repos": 19,
+            "agent": 0,
+            "human": 0.08,
+            "ratioRange": [
+              0,
+              0
+            ]
+          }
+        },
+        "secretsPer1M": {
+          "value": 25.04,
+          "range": [
+            0,
+            53.55
+          ],
+          "vsHumans": {
+            "repos": 19,
+            "agent": 0,
+            "human": 25.17,
+            "ratioRange": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "shortcuts": {
+        "Casts to any": 0.98,
+        "Swallows errors in an empty catch": 0.76,
+        "Turns off a lint rule": 0.2,
+        "Silences the type checker": 0.05
+      }
+    }
+  ]
+}

@@ -63,10 +63,17 @@ export function renderPage(d) {
   const cut = { less: by('shortcutsPer1k', 'less'), more: by('shortcutsPer1k', 'more') };
   const dead = { less: by('deadPer1k', 'less'), more: by('deadPer1k', 'more') };
   const kinds = [...new Set(d.agents.flatMap((a) => Object.keys(a.shortcuts)))].filter((k) => d.agents.some((a) => a.shortcuts[k] >= 0.02));
-  const bigCommit = agents.filter((a) => a.medianCommit >= humans.medianCommit * 2).map((a) => a.name);
+  const bigCommit = agents.filter((a) => a.medianCommit >= humans.medianCommit * 1.5).map((a) => a.name);
   const from = new Date(`${d.since}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
   const to = new Date(d.generated).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
   const secrets = d.agents.reduce((s, a) => s + a.secrets, 0);
+  // "36–62%": how much less, across the agents that clearly do less
+  const lessRange = (key, names) => {
+    const pct = names.map((name) => Math.round((1 - ratio(agents.find((a) => a.name === name).metrics[key])) * 100)).sort((a, b) => a - b);
+    return pct[0] === pct.at(-1) ? `${pct[0]}%` : `${pct[0]}–${pct.at(-1)}%`;
+  };
+  const multiples = agents.filter((a) => a.medianCommit >= humans.medianCommit * 1.5).map((a) => a.medianCommit / humans.medianCommit);
+  const topKinds = new Set(d.agents.map((a) => Object.keys(a.shortcuts)[0]));
   const since = new Date(`${d.since}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
   return `<title>The State of AI Code</title>
@@ -140,15 +147,15 @@ a{color:inherit;text-underline-offset:3px}
 
 <section>
   <p class="eyebrow">Lines deleted for every 100 added</p>
-  <h2>${del.less.length >= agents.length / 2 ? 'Agents add code. They rarely take it away.' : 'Agents delete about as much as the people they work with.'}</h2>
-  <p>A healthy codebase gets pruned: old versions removed, dead helpers deleted, two ways of doing a thing folded into one. ${del.less.length ? `${list(del.less)} deleted clearly less for each line they added than the humans committing to the same repos.` : ''}${del.more.length ? ` ${list(del.more)} deleted more.` : ''} ${agents.length - del.less.length - del.more.length ? `For ${list(agents.filter((a) => !del.less.includes(a.name) && !del.more.includes(a.name)).map((a) => a.name))}, the difference is within the noise.` : ''}</p>
+  <h2>${del.less.length ? `${list(del.less)} delete ${lessRange('deletedPer100', del.less)} less than the humans they work with.` : 'Agents delete about as much as the people they work with.'}</h2>
+  <p>A healthy codebase gets pruned: old versions removed, dead helpers deleted, two ways of doing a thing folded into one. ${del.less.length ? `${list(del.less)} deleted clearly less for each line they added than the humans committing to the same repos.` : ''}${del.more.length ? ` ${list(del.more)} deleted more.` : ' No agent deleted more.'} ${agents.length - del.less.length - del.more.length ? `For ${list(agents.filter((a) => !del.less.includes(a.name) && !del.more.includes(a.name)).map((a) => a.name))}, the difference is within the noise.` : ''}</p>
   ${dumbbell(agents, 'deletedPer100', 'lines deleted per 100 added', 0)}
   <p class="note">Each row compares an agent with the humans in the repos where both wrote at least 300 lines. The range is a 90% bootstrap interval over repos: “within noise” means it includes 1×.</p>
 </section>
 
 <section>
   <p class="eyebrow">Commit size</p>
-  <h2>${bigCommit.length ? `${list(bigCommit)} commit ${bigCommit.length > 1 ? 'in' : 'in'} chunks ${n(Math.min(...agents.filter((a) => bigCommit.includes(a.name)).map((a) => a.medianCommit / humans.medianCommit)), 0)}× the size of a human commit.` : 'Agents commit in human-sized pieces.'}</h2>
+  <h2>${bigCommit.length ? `${list(bigCommit)} add ${n(Math.min(...multiples), 1)}${Math.max(...multiples) - Math.min(...multiples) >= 0.1 ? `–${n(Math.max(...multiples), 1)}` : ''}× as many lines per commit as humans.` : 'Agents commit in human-sized pieces.'}</h2>
   <p>The median human commit added ${n(humans.medianCommit)} lines of JavaScript or TypeScript. Big commits are harder to review, and review is where dead code and shortcuts get caught.</p>
   ${commitSizes(d.agents)}
 </section>
@@ -156,7 +163,7 @@ a{color:inherit;text-underline-offset:3px}
 <section>
   <p class="eyebrow">Shortcuts per 1,000 lines added</p>
   <h2>${cut.less.length && !cut.more.length ? `${list(cut.less)} take${cut.less.length > 1 ? '' : 's'} fewer shortcuts than the humans ${cut.less.length > 1 ? 'they work' : 'it works'} with.` : cut.more.length ? `${list(cut.more)} take${cut.more.length > 1 ? '' : 's'} more shortcuts than the humans ${cut.more.length > 1 ? 'they work' : 'it works'} with.` : 'On shortcuts, agents look like the people they work with.'}</h2>
-  <p>A shortcut makes a check pass without fixing what it found: <code>@ts-ignore</code>, <code>eslint-disable</code> without a reason, <code>as any</code>, <code>.skip</code> and <code>.only</code> on tests, an empty <code>catch</code>, or a branch on <code>NODE_ENV === 'test'</code>. ${cut.less.length && cut.more.length ? `${list(cut.more)} took more of them than the humans in their repos, and ${list(cut.less)} took fewer.` : ''} ${agents.filter((a) => verdict(a.metrics.shortcutsPer1k) === 'same').length ? `For ${list(agents.filter((a) => verdict(a.metrics.shortcutsPer1k) === 'same').map((a) => a.name))}, the sample can't tell them apart from humans.` : ''}</p>
+  <p>A shortcut makes a check pass without fixing what it found: <code>@ts-ignore</code>, <code>eslint-disable</code> without a reason, <code>as any</code>, <code>.skip</code> and <code>.only</code> on tests, an empty <code>catch</code>, or a branch on <code>NODE_ENV === 'test'</code>. ${cut.less.length && cut.more.length ? `${list(cut.more)} took more of them than the humans in their repos, and ${list(cut.less)} took fewer.` : ''} ${agents.filter((a) => verdict(a.metrics.shortcutsPer1k) === 'same').length ? `For ${list(agents.filter((a) => verdict(a.metrics.shortcutsPer1k) === 'same').map((a) => a.name))}, the sample can't tell them apart from humans.` : ''}${topKinds.size === 1 && topKinds.has('Casts to any') ? ' For every author, humans included, the most common shortcut is <code>as any</code>.' : ''}</p>
   ${dumbbell(agents, 'shortcutsPer1k', 'shortcuts per 1,000 lines added', 2)}
   <div class="table-wrap"><table>
     <thead><tr><th>Per 1,000 lines</th>${kinds.map((k) => `<th>${esc({ 'Casts to any': 'as any', 'Turns off a lint rule': 'lint rule off', 'Silences the type checker': '@ts-ignore', 'Focuses one test, so CI silently skips the rest': '.only', 'Skips a test': '.skip', 'Swallows errors in an empty catch': 'empty catch', 'Special-cases the test environment': 'test-env branch' }[k] || k)}</th>`).join('')}</tr></thead>
@@ -166,8 +173,8 @@ a{color:inherit;text-underline-offset:3px}
 
 <section>
   <p class="eyebrow">Dead code per 1,000 lines added</p>
-  <h2>${dead.more.length ? `More of ${list(dead.more)}'s code ends up in files nothing uses.` : dead.less.length ? `Less agent code ends up in files nothing uses than you might think.` : 'Dead code: no clear difference yet.'}</h2>
-  <p>Lines each author wrote in the last year that now sit in files nothing imports or names. ${dead.less.length ? `${list(dead.less)} left clearly less dead code than the humans in the same repos.` : ''}${dead.more.length ? ` ${list(dead.more)} left more.` : ''} This is the noisiest measure here: a file only a framework loads by name can look unused.</p>
+  <h2>${dead.more.length ? `More of ${list(dead.more)}'s code ends up in files nothing uses.` : dead.less.length ? `${list(dead.less)} leave less of their own code dead than humans do.` : 'Dead code: no clear difference yet.'}</h2>
+  <p>Lines each author wrote in the last year that now sit in files nothing imports or names. ${dead.less.length ? `${list(dead.less)} left clearly less of their own code dead than the humans in the same repos.` : ''}${dead.more.length ? ` ${list(dead.more)} left more.` : ''} Dead lines are credited to whoever wrote them, not to whoever stopped using them: when an agent writes a replacement and leaves the old file behind, those lines count against the person who wrote the original. Read it together with the deletion numbers above. This is also the noisiest measure here, since a file only a framework loads by name can look unused.</p>
   ${dumbbell(agents, 'deadPer1k', 'dead lines per 1,000 added', 1)}
 </section>
 

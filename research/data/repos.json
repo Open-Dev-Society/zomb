@@ -1,0 +1,2126 @@
+{
+  "Claude": [
+    {
+      "repo": "Team-Commonly/commonly",
+      "stars": 1352,
+      "kb": 81008,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "arul28/ADE",
+      "stars": 111,
+      "kb": 201598,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "akhayam99/goodboy",
+      "stars": 108,
+      "kb": 132325,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Clawdi-AI/clawdi",
+      "stars": 103,
+      "kb": 27581,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "loicduong/vite-plugin-vue-layouts-next",
+      "stars": 71,
+      "kb": 2254,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "opendatahub-io/odh-dashboard",
+      "stars": 63,
+      "kb": 257624,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "morpho-org/sdks",
+      "stars": 42,
+      "kb": 23232,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "recomposesh/recompose",
+      "stars": 28,
+      "kb": 81977,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "zkp2p/zkp2p-contracts",
+      "stars": 26,
+      "kb": 10879,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "naomiaro/opendaw-test",
+      "stars": 20,
+      "kb": 143282,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "nemori-ai/cc-master",
+      "stars": 13,
+      "kb": 26061,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "tvanhens/ramose",
+      "stars": 11,
+      "kb": 15040,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "kehto/web",
+      "stars": 5,
+      "kb": 13423,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "thomas-powers-jr/cadence",
+      "stars": 2,
+      "kb": 11595,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Paullitsc/Style-It-Yourself",
+      "stars": 2,
+      "kb": 10201,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "rbcodelabs/agent-threads",
+      "stars": 1,
+      "kb": 144458,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "XavierGDelrosario/Dino",
+      "stars": 1,
+      "kb": 9124,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "AlexeyNixel/new-backend",
+      "stars": 1,
+      "kb": 491,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "aiur-team/khala",
+      "stars": 1,
+      "kb": 28559,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Elessiah/AppBlueGenji",
+      "stars": 1,
+      "kb": 23190,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "m4ttstack/mattstack",
+      "stars": 1,
+      "kb": 255430,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "GizClaw/hailibrary",
+      "stars": 1,
+      "kb": 53967,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "vinnymicale/moolah",
+      "stars": 1,
+      "kb": 7049,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "kaelen2026/linonward",
+      "stars": 1,
+      "kb": 2030,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "quickstart-now/hejbro",
+      "stars": 1,
+      "kb": 9457,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "monkey1sai/AI-BIM-governance",
+      "stars": 1,
+      "kb": 217966,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "vnedyalk0v/pi-enhanced",
+      "stars": 1,
+      "kb": 529,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "pixieofhugs/WorldZeroPlayground",
+      "stars": 1,
+      "kb": 47951,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "hdussert/what-box",
+      "stars": 0,
+      "kb": 816,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "ludaxkris/maze-vibing",
+      "stars": 0,
+      "kb": 312,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "havishalterx-eng/alterengine-6",
+      "stars": 0,
+      "kb": 10584,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "chisato-0103/ait-transit",
+      "stars": 0,
+      "kb": 2408,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Comune-di-Montesilvano/UtenzePA",
+      "stars": 0,
+      "kb": 6997,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jopealgorta/physio-trainer",
+      "stars": 0,
+      "kb": 978,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "biginkc/sandra",
+      "stars": 0,
+      "kb": 87515,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "HMBLegend/Rhythm",
+      "stars": 0,
+      "kb": 329,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Lumen-Marketing/TaskManagementQuest",
+      "stars": 0,
+      "kb": 30962,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "gradientspaceai/gtengine-js",
+      "stars": 0,
+      "kb": 10871,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "JuniYadi/projects-green",
+      "stars": 0,
+      "kb": 35551,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "manjeetsharma0796/agon-dev",
+      "stars": 0,
+      "kb": 4920,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "lambda-script/harnessforce-agent",
+      "stars": 0,
+      "kb": 432,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jleh/hiski-mcp",
+      "stars": 0,
+      "kb": 335,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Denny-Hwang/TRL-assess",
+      "stars": 0,
+      "kb": 5175,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "ringshark/townforge-3d-preview",
+      "stars": 0,
+      "kb": 227632,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "masachidc/masachi-dc-portfolio",
+      "stars": 0,
+      "kb": 249,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "daneroo/im-qcic",
+      "stars": 0,
+      "kb": 38784,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "foulox/tigerwolves",
+      "stars": 0,
+      "kb": 3562,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Synqed-kk/karute",
+      "stars": 0,
+      "kb": 103722,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "StarOrga/Star-Citizen-Companion-Web",
+      "stars": 0,
+      "kb": 19849,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "JuanchiiBM/sso-interactive-guide",
+      "stars": 0,
+      "kb": 991,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "euclidesgc/folioteca",
+      "stars": 0,
+      "kb": 2568,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "hellomkreyes/luna-pie",
+      "stars": 0,
+      "kb": 40,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "AIMS-Product/vending-website",
+      "stars": 0,
+      "kb": 67167,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "kontakt755/teppich-paradies-shopify-ai",
+      "stars": 0,
+      "kb": 17432,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "parsmk/calorie-ledger",
+      "stars": 0,
+      "kb": 129,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "place-to-stand/the-good-for-nothings-club",
+      "stars": 0,
+      "kb": 8271,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "a-ai-team/astar-apply",
+      "stars": 0,
+      "kb": 4702,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "zhifeimi/dentistdss-pwa",
+      "stars": 0,
+      "kb": 15000,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "darthjee/kerghan",
+      "stars": 0,
+      "kb": 1428,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "tbachou/tony-chou-portfolio",
+      "stars": 0,
+      "kb": 6896,
+      "language": "TypeScript"
+    }
+  ],
+  "Cursor": [
+    {
+      "repo": "growthbook/growthbook",
+      "stars": 8455,
+      "kb": 285359,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "vercel/workflow",
+      "stars": 2441,
+      "kb": 102329,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "TheLunarCompany/lunar",
+      "stars": 501,
+      "kb": 27104,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "eigenpal/docx-editor",
+      "stars": 445,
+      "kb": 55274,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "maojindao55/freebuddy",
+      "stars": 159,
+      "kb": 58442,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "microlinkhq/www",
+      "stars": 142,
+      "kb": 89875,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "arul28/ADE",
+      "stars": 111,
+      "kb": 201598,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "mckinsey/quantumblack-design-system",
+      "stars": 90,
+      "kb": 18086,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "vantage-sh/vantage-mcp-server",
+      "stars": 83,
+      "kb": 8716,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Hackdex-App/hackdex-website",
+      "stars": 79,
+      "kb": 37137,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "opendatahub-io/odh-dashboard",
+      "stars": 63,
+      "kb": 257624,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "vitalvie/vital",
+      "stars": 50,
+      "kb": 16122,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "kaeawc/auto-mobile",
+      "stars": 49,
+      "kb": 168771,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "flexprice/flexprice-front",
+      "stars": 34,
+      "kb": 36281,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "watt-mind/factory",
+      "stars": 18,
+      "kb": 13960,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "shogo-labs/shogo-ai",
+      "stars": 15,
+      "kb": 47152,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "donovan-yohan/relay-ide",
+      "stars": 11,
+      "kb": 44398,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Octember/stupify",
+      "stars": 11,
+      "kb": 3011,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "thierry-gilgen-ict/engawa",
+      "stars": 5,
+      "kb": 1544,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "lovato/streamdeck-auto-profile-switcher",
+      "stars": 3,
+      "kb": 2922,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "vinialbano/eventstormer",
+      "stars": 3,
+      "kb": 12286,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "finogeeks/finclaw-cli",
+      "stars": 2,
+      "kb": 382,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "sev7n4/lnkpi",
+      "stars": 2,
+      "kb": 28364,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "yossi-weinberger/ten10",
+      "stars": 2,
+      "kb": 12687,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jackmcpickle/tokenmaxer",
+      "stars": 2,
+      "kb": 2017,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "JECT-Study/Sossbar-4th-Client",
+      "stars": 2,
+      "kb": 22839,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "NatanTechofNY/fieldnote-assistant",
+      "stars": 1,
+      "kb": 6943,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "yuri-poliantsev/lorien-stack",
+      "stars": 1,
+      "kb": 60137,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "bkemper/www.brianpatrickkemper.com",
+      "stars": 1,
+      "kb": 1812,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "SamSamskies/inference-bridge",
+      "stars": 1,
+      "kb": 796,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "Anthony-FS/courseflow",
+      "stars": 1,
+      "kb": 21588,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "zhaoxuanZzz/dsh-desktop",
+      "stars": 1,
+      "kb": 205,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "josheverett/hydraz",
+      "stars": 1,
+      "kb": 1111,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "kacperczeczot/stagesync",
+      "stars": 1,
+      "kb": 244535,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "nickolu/generated-crosswords",
+      "stars": 1,
+      "kb": 4601,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "g3k0/andromeda",
+      "stars": 1,
+      "kb": 1567,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "ilaldimelis-source/cha-sales-tool",
+      "stars": 1,
+      "kb": 121992,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "QuietAgencyDev/Sullys1943",
+      "stars": 0,
+      "kb": 10469,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "adrien-k/baguette",
+      "stars": 0,
+      "kb": 5487,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "hi-imcodeman/ollama-mcp-client",
+      "stars": 0,
+      "kb": 2801,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "ShadyUnderLight/promptarium",
+      "stars": 0,
+      "kb": 9790,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jpbullalayao/professorragna",
+      "stars": 0,
+      "kb": 493,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "sdh2222/eth-tokyo",
+      "stars": 0,
+      "kb": 19544,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "nolanvargas/Field",
+      "stars": 0,
+      "kb": 14813,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "sdh2222/midnight-hackathon",
+      "stars": 0,
+      "kb": 4116,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Nasalciuc/BBC-Club",
+      "stars": 0,
+      "kb": 5962,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "homeslate/homeslate",
+      "stars": 0,
+      "kb": 1048,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "joemmalatesta/Groople-2",
+      "stars": 0,
+      "kb": 1778,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "AnuragAmbekar741/kosh",
+      "stars": 0,
+      "kb": 714,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "sammuka/alpha-carnes",
+      "stars": 0,
+      "kb": 58035,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "sev7n4/pi-lnk",
+      "stars": 0,
+      "kb": 37524,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "philga7/informed-news",
+      "stars": 0,
+      "kb": 37620,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jpbaldon/BibleReviewApp",
+      "stars": 0,
+      "kb": 9982,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "AndyLiang1/meal_prep_app",
+      "stars": 0,
+      "kb": 308,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "isgalloping/snaptax",
+      "stars": 0,
+      "kb": 84008,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "allisonwalker/GreenThumb",
+      "stars": 0,
+      "kb": 783,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Shamsham01/lean-excellence-hub",
+      "stars": 0,
+      "kb": 3498,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "NYCU-WinLab/portal.winlab.tw",
+      "stars": 0,
+      "kb": 4840,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "henter36/complaints-intelligence-platform",
+      "stars": 0,
+      "kb": 3402,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "var-ui/var-ui",
+      "stars": 0,
+      "kb": 3968,
+      "language": "TypeScript"
+    }
+  ],
+  "Copilot": [
+    {
+      "repo": "tloncorp/tlon-apps",
+      "stars": 107,
+      "kb": 142687,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "NickScherbakov/very-simple-tetris-created-by-Copilot",
+      "stars": 27,
+      "kb": 538,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "p2devs/Anizuno",
+      "stars": 27,
+      "kb": 31487,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "alexanderkasten/use-next-sse",
+      "stars": 16,
+      "kb": 1013,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "ymtszw/setem",
+      "stars": 15,
+      "kb": 593,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "OpenOlitor/openolitor-client-admin",
+      "stars": 11,
+      "kb": 14331,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "lachyjp/GetUp",
+      "stars": 3,
+      "kb": 61446,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "shhhivam12/easyev",
+      "stars": 2,
+      "kb": 173643,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "OpenCoven/chat",
+      "stars": 2,
+      "kb": 9646,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "MCZbase/MCZbase",
+      "stars": 2,
+      "kb": 133171,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "homelabird/s3desk",
+      "stars": 2,
+      "kb": 50633,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "b2renger/chromateque",
+      "stars": 2,
+      "kb": 6788,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "tmelliottjr/github-sidecar",
+      "stars": 1,
+      "kb": 544,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "felipemvrin/nightcall-ui",
+      "stars": 1,
+      "kb": 8566,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "saumyasanghvi03/navkarsiddhi",
+      "stars": 1,
+      "kb": 1528,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "jsilvanus/skosmos-mcp",
+      "stars": 1,
+      "kb": 266,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "bQuery/bQuery",
+      "stars": 1,
+      "kb": 5348,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "gbyo/qbsheet",
+      "stars": 0,
+      "kb": 237334,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "urvashislash/nexora-ai",
+      "stars": 0,
+      "kb": 1103,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "romanpetrlik-ctrl/RideMatrix-WEB",
+      "stars": 0,
+      "kb": 1005,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "dmankv/Project-HELEN",
+      "stars": 0,
+      "kb": 1391,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "axetroy/Aegis",
+      "stars": 0,
+      "kb": 220,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "wix-diesel/TIFFScheduler",
+      "stars": 0,
+      "kb": 225,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "dontcodejunaid/GymNation",
+      "stars": 0,
+      "kb": 81953,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "Elovvaan/SAIN-REAL-ASSET-MARKET",
+      "stars": 0,
+      "kb": 5168,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "ambhargava/bakari-game",
+      "stars": 0,
+      "kb": 484,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "nomech/paintrack",
+      "stars": 0,
+      "kb": 234,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "hoffrocket/chrometabs",
+      "stars": 0,
+      "kb": 515,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "BUKAZU/React-portal",
+      "stars": 0,
+      "kb": 76168,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Chief-Ministry-Southern-Province/vehicle-management-system",
+      "stars": 0,
+      "kb": 32106,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "qwsrtvyvsm-png/TemptX",
+      "stars": 0,
+      "kb": 14570,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "shivesh2334-ai/hf-copilot",
+      "stars": 0,
+      "kb": 107,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jacksonsdean/jackson-rachel",
+      "stars": 0,
+      "kb": 230,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "timothyf/app-starter-prompt",
+      "stars": 0,
+      "kb": 38,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "cupixapps/.github",
+      "stars": 0,
+      "kb": 15,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "sheng656/Untitled",
+      "stars": 0,
+      "kb": 165,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Festas/Immo-Invest-Tool",
+      "stars": 0,
+      "kb": 989,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "novariaportal/infinite-dispatch",
+      "stars": 0,
+      "kb": 1795,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "cyd0v/perma-site-demo",
+      "stars": 0,
+      "kb": 166269,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "fernando-msa/tradutor-msa",
+      "stars": 0,
+      "kb": 13278,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "Raii-stack/MediSync",
+      "stars": 0,
+      "kb": 5919,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "DonAyers/rustle",
+      "stars": 0,
+      "kb": 21,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "shouryavarma/agent-arsenal-v2",
+      "stars": 0,
+      "kb": 34398,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "KaloyanGG/cars-mobile-bg-scraper",
+      "stars": 0,
+      "kb": 31,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "chaos-factory/ideator-execution-008-digital-nomad-visa-4-visascope-dn-landscape-quick-compare-top-30",
+      "stars": 0,
+      "kb": 55,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jxhn-dev/ChatApp",
+      "stars": 0,
+      "kb": 1895,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "simon-k/simons-garden-gnome-repo",
+      "stars": 0,
+      "kb": 7971,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "zomerfeld/Time-Zone-Buddy",
+      "stars": 0,
+      "kb": 954,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "rifahh-5/AI-Chatbot",
+      "stars": 0,
+      "kb": 67835,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "VOICEVOX/preview-pages",
+      "stars": 0,
+      "kb": 128,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "davvoz/davvoz",
+      "stars": 0,
+      "kb": 68,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "whisperrnote/whisperrmail",
+      "stars": 0,
+      "kb": 69,
+      "language": "TypeScript"
+    }
+  ],
+  "Devin": [
+    {
+      "repo": "affaan-m/ECC",
+      "stars": 269617,
+      "kb": 54180,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "OnlyTerp/openclaw-optimization-guide",
+      "stars": 388,
+      "kb": 1136,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "browserless/browserless-mcp",
+      "stars": 7,
+      "kb": 5385,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "AwsomeFox/campfire",
+      "stars": 5,
+      "kb": 33563,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jbyh/Reim",
+      "stars": 3,
+      "kb": 808,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "TS205312/Demo-dashboard-1",
+      "stars": 1,
+      "kb": 2104,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "Try-Gravity/gravclone",
+      "stars": 1,
+      "kb": 48,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "frtazriyann/student_management",
+      "stars": 1,
+      "kb": 123,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "cy4rp/x-api-web",
+      "stars": 0,
+      "kb": 91,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "hi-lee-mon/Nageru",
+      "stars": 0,
+      "kb": 305,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "joaovpaltanin/minhas-receitas",
+      "stars": 0,
+      "kb": 110,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "bnm15012/edupulse",
+      "stars": 0,
+      "kb": 2762,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "javi-technology/casamento-planejamento",
+      "stars": 0,
+      "kb": 239,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "neo-start/metis",
+      "stars": 0,
+      "kb": 131204,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "zbutterfly/MINIMAX_M3",
+      "stars": 0,
+      "kb": 8524,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "ravindra9565/devin",
+      "stars": 0,
+      "kb": 95,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jlvilcav/ControlGastos",
+      "stars": 0,
+      "kb": 48,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "NavaneethkumarS2005/Bookverse",
+      "stars": 0,
+      "kb": 39126,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "mathzs7r/PlanetaDosMacacos",
+      "stars": 0,
+      "kb": 86,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "jquina/test",
+      "stars": 0,
+      "kb": 3376,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "ikeike443/a-sample-coding-agent",
+      "stars": 0,
+      "kb": 627,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "ozekimasaki/lastframe_getter",
+      "stars": 0,
+      "kb": 302,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "professorhood84/astranum",
+      "stars": 0,
+      "kb": 184,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Redixus/Pestora",
+      "stars": 0,
+      "kb": 199,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "slmazwi-coder/reitvlei-sss",
+      "stars": 0,
+      "kb": 891,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Jainil2/jainilchauhan",
+      "stars": 0,
+      "kb": 4167,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "renatelius/zero-rpg",
+      "stars": 0,
+      "kb": 32662,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "sanluispropublicidad-ai/eveclaw",
+      "stars": 0,
+      "kb": 2547,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "budalin/infra-wiki",
+      "stars": 0,
+      "kb": 78,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "CarolinaTorrens/devin.ai-web",
+      "stars": 0,
+      "kb": 78,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "intubemediaofficial-ux/Gstbillmanager",
+      "stars": 0,
+      "kb": 1153,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "lucasschirm/bhai",
+      "stars": 0,
+      "kb": 738,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "bcit-tlu/qf-pcr",
+      "stars": 0,
+      "kb": 7925,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "duttrishabh2003-web/Vercel-",
+      "stars": 0,
+      "kb": 9269,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "vhasili/ECC",
+      "stars": 0,
+      "kb": 97040,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "johnny2499-dev/Lumina-WebClient",
+      "stars": 0,
+      "kb": 43832,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "Sansay411/Hackathon_WorkPay_TON_-07.06.2026-.",
+      "stars": 0,
+      "kb": 4662,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "lanly-dev/vibe",
+      "stars": 0,
+      "kb": 200,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "whitelotus-web/hanbridge",
+      "stars": 0,
+      "kb": 513,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "dao-genesis/agent-remote-repair",
+      "stars": 0,
+      "kb": 561,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "teddyray63/mlbshell",
+      "stars": 0,
+      "kb": 856,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "cvfixerai-dotcom/whatsapp-sales-concierge",
+      "stars": 0,
+      "kb": 1397,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "desmondzee/Cognition-THP-docs",
+      "stars": 0,
+      "kb": 169,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Kulca/KMACA-",
+      "stars": 0,
+      "kb": 100,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Cognition-Cognizant-Customers/traderx",
+      "stars": 0,
+      "kb": 4286,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "abdel2354/crash-predictor",
+      "stars": 0,
+      "kb": 423,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jkdreamr/verses",
+      "stars": 0,
+      "kb": 3872,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "uxin91/ai-baby-assistant",
+      "stars": 0,
+      "kb": 638,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "sacmaumb-dot/pos",
+      "stars": 0,
+      "kb": 555,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "samrst/samrst",
+      "stars": 0,
+      "kb": 33,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "eksucampusmarketplace-cell/eksu-campus-marketplace",
+      "stars": 0,
+      "kb": 225,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "mahdi1234-hub/docuflow-saas",
+      "stars": 0,
+      "kb": 125,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "vellum-ai/velly",
+      "stars": 0,
+      "kb": 49,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Jayloxxx/AfKnow",
+      "stars": 0,
+      "kb": 689,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "sunkarakrwutarth9-ai/class-6-maths",
+      "stars": 0,
+      "kb": 29973,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "FelicitasGarcia/CoinStable26",
+      "stars": 0,
+      "kb": 5765,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "taishi-kam/devin-music",
+      "stars": 0,
+      "kb": 34,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Jeffrey9130/invtest2",
+      "stars": 0,
+      "kb": 247,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "kenta640/Hagu",
+      "stars": 0,
+      "kb": 104,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "freckle/non-empty-js",
+      "stars": 0,
+      "kb": 944,
+      "language": "TypeScript"
+    }
+  ],
+  "Jules": [
+    {
+      "repo": "lrq3000/infinitabs",
+      "stars": 7,
+      "kb": 1131,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "ShaoRou459/QuickAI",
+      "stars": 2,
+      "kb": 510,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "DannOfficial/d-gateway",
+      "stars": 1,
+      "kb": 381,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "BrandonML/page-timestamp-finder-chrome-extension",
+      "stars": 1,
+      "kb": 5656,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "Nok1on1/product-capstone-2026",
+      "stars": 1,
+      "kb": 24019,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "chen-ye/open-aerocharts",
+      "stars": 1,
+      "kb": 76499,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "gbatistaa/my-library",
+      "stars": 1,
+      "kb": 1413,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "sohagabir112/macha-website",
+      "stars": 1,
+      "kb": 20806,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "keisato848/IpaLab",
+      "stars": 1,
+      "kb": 75746,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "saumyasanghvi03/navkarsiddhi",
+      "stars": 1,
+      "kb": 1528,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "fborjaz/Landing_Page_Premium_Casino",
+      "stars": 1,
+      "kb": 521,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "issei/boutiqueempresarial-site",
+      "stars": 0,
+      "kb": 1152,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "Kiran-mondal/OmLang",
+      "stars": 0,
+      "kb": 309,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "SelmerShow/pomodoro-app",
+      "stars": 0,
+      "kb": 32364,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "Matiasmj7/mbl-world",
+      "stars": 0,
+      "kb": 27512,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "bnodbs/Bharosha-HCC-Lab",
+      "stars": 0,
+      "kb": 234,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Jeff3123-design/master-erp",
+      "stars": 0,
+      "kb": 173,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "golusoft/radha-education",
+      "stars": 0,
+      "kb": 91,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "DiegoDanner/Danner-Idiomas-Quizz",
+      "stars": 0,
+      "kb": 10970,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "DevOpsBenjamin/HandiBaby",
+      "stars": 0,
+      "kb": 390,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "ukadike2006-stack/alpha",
+      "stars": 0,
+      "kb": 86,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "siloneedsleep/equinox",
+      "stars": 0,
+      "kb": 884,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "omarribrahem/ATHR",
+      "stars": 0,
+      "kb": 34584,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "YoozeYT/SaintBuilder",
+      "stars": 0,
+      "kb": 8,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "scking21/Blackrow-Trails",
+      "stars": 0,
+      "kb": 27432,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "DiabloNova/Ranking_components",
+      "stars": 0,
+      "kb": 4506,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Johnnydaboy/anythingllm-sso",
+      "stars": 0,
+      "kb": 361,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "enatan10712/netfllix-clone",
+      "stars": 0,
+      "kb": 134,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "mypieinteractive/sproute",
+      "stars": 0,
+      "kb": 2489,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "suryasarathisiva-cell/Weather-app",
+      "stars": 0,
+      "kb": 22,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "MarioMalone/PelvicFloorExercises",
+      "stars": 0,
+      "kb": 37,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "dhruvsavla/NexAura-Guides-Frontend",
+      "stars": 0,
+      "kb": 7169,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "Lcore17/Cipher-Gaurd-AI",
+      "stars": 0,
+      "kb": 66,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "am225723/rootsandtides",
+      "stars": 0,
+      "kb": 48784,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "shaluji1111/khul-ke-pucho-tracker",
+      "stars": 0,
+      "kb": 740,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "aalimaslam/litepostman",
+      "stars": 0,
+      "kb": 108,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "mbgulden/Auto-Continue-Plus-Plus",
+      "stars": 0,
+      "kb": 10888,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "cdsassj00/3d-GAME",
+      "stars": 0,
+      "kb": 127,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "drewips22/keuangan",
+      "stars": 0,
+      "kb": 44,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "bachjae/sat-act-kitchen-rush",
+      "stars": 0,
+      "kb": 173,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Evsikoff/BookGuesser",
+      "stars": 0,
+      "kb": 487,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "prezvious/math-visual",
+      "stars": 0,
+      "kb": 921,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "GustavoCoelho321/labor-control-web",
+      "stars": 0,
+      "kb": 1018,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "sgerpguochao/mini_openclaw_vb",
+      "stars": 0,
+      "kb": 185343,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "RayanYousef/Portfolio",
+      "stars": 0,
+      "kb": 15140,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "ranithu-dulneh/ThusiraChemicals",
+      "stars": 0,
+      "kb": 115,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jiangshaojie2020/clawdbot",
+      "stars": 0,
+      "kb": 215586,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "HuberAndreas1/CI-CD-Demo-Azure-Gruppenarbeit",
+      "stars": 0,
+      "kb": 511,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "cshabsin/hunt2026",
+      "stars": 0,
+      "kb": 8039,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Arsh-Liquid-Energy/openclaw-normie",
+      "stars": 0,
+      "kb": 210397,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "harrydev128/saarthi-bot",
+      "stars": 0,
+      "kb": 267063,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "aaxonholdings-lgtm/PartsManager",
+      "stars": 0,
+      "kb": 513,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "Daniel-dg-conta1/Forcas_fresamento",
+      "stars": 0,
+      "kb": 18,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "alaafwazymasoud/niletag",
+      "stars": 0,
+      "kb": 24,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "Abrahan987/Scraping-Play",
+      "stars": 0,
+      "kb": 142,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "glennf/molten-singularity",
+      "stars": 0,
+      "kb": 157,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "VikramTiwari/screen-editor",
+      "stars": 0,
+      "kb": 205,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "anuraj07/AIPortfolio",
+      "stars": 0,
+      "kb": 10094,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "p4cm4n972/codebog",
+      "stars": 0,
+      "kb": 65754,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "a7garden/how-many-blood",
+      "stars": 0,
+      "kb": 42672,
+      "language": "TypeScript"
+    }
+  ],
+  "Codex": [
+    {
+      "repo": "gitpod-io/gitpod",
+      "stars": 13778,
+      "kb": 108273,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "nowork-studio/notfair-plugin",
+      "stars": 3881,
+      "kb": 21120,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "stripe/stripe-react-native",
+      "stars": 1429,
+      "kb": 9376,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "stripe/link-cli",
+      "stars": 805,
+      "kb": 2248,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "alchemyplatform/aa-sdk",
+      "stars": 321,
+      "kb": 159849,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "vitest-community/vitest-browser-react",
+      "stars": 293,
+      "kb": 283,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "wevm/mppx",
+      "stars": 181,
+      "kb": 6955,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "softmaple/softmaple",
+      "stars": 159,
+      "kb": 13032,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "vitest-community/vitest-browser-vue",
+      "stars": 79,
+      "kb": 278,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "EasyMetaAu/helm-api",
+      "stars": 30,
+      "kb": 22428,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "arturogarrido/claudinho",
+      "stars": 29,
+      "kb": 4431,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "spotify/confidence-sdk-js",
+      "stars": 23,
+      "kb": 4575,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "SinhyeokKang/bugshot-2",
+      "stars": 18,
+      "kb": 51749,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "omniaura/omniclaw",
+      "stars": 17,
+      "kb": 9736,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "superduck-ai/superduck",
+      "stars": 15,
+      "kb": 4569,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "aio-proxy/aio-proxy",
+      "stars": 14,
+      "kb": 21128,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "ArcBlock/agent-skills",
+      "stars": 5,
+      "kb": 2916,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "stripe-samples/crypto-embedded-components-onramp",
+      "stars": 4,
+      "kb": 1366,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "gaia-research/gaia-skill-heaven",
+      "stars": 4,
+      "kb": 151772,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "s977043/river-review",
+      "stars": 3,
+      "kb": 81763,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "HarperFast/harper-pro",
+      "stars": 3,
+      "kb": 6993,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "NikolayS/samogrow",
+      "stars": 3,
+      "kb": 39764,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "caseyWebb/yet-another-meal-planner",
+      "stars": 3,
+      "kb": 173045,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "kmgrassi/PopcornReady",
+      "stars": 3,
+      "kb": 50465,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "narralabs/routi",
+      "stars": 2,
+      "kb": 2813,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "HITSZ-OpenAuto/hoa-fuma",
+      "stars": 2,
+      "kb": 15066,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "a-novel/platform-studio",
+      "stars": 1,
+      "kb": 292,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "blocktransfer/org-docs",
+      "stars": 1,
+      "kb": 42308,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "lab255/appliance.sh",
+      "stars": 1,
+      "kb": 15981,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "kinetik-gg/coda",
+      "stars": 1,
+      "kb": 15088,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "PerfectPan/wiki",
+      "stars": 1,
+      "kb": 70729,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "GordonBeeming/ide",
+      "stars": 1,
+      "kb": 6356,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "GordonBeeming/SSMSx",
+      "stars": 1,
+      "kb": 795,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "localgod/polaris",
+      "stars": 1,
+      "kb": 5976,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Irdanwen/sub-rosa",
+      "stars": 1,
+      "kb": 26222,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "freebatteryfactory/LiteShip",
+      "stars": 1,
+      "kb": 25841,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "wrzonance/SpecR",
+      "stars": 1,
+      "kb": 22360,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "marcusleg/briefing-officer",
+      "stars": 1,
+      "kb": 6523,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "GrandyLu/Specoding",
+      "stars": 1,
+      "kb": 6451,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "paul-bouzian/Skein",
+      "stars": 1,
+      "kb": 9659,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "omniaura/faircopy",
+      "stars": 1,
+      "kb": 336,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "jonathanong/darkpanda",
+      "stars": 1,
+      "kb": 242,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "laborosai/routi-relay",
+      "stars": 0,
+      "kb": 61,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "CryptoJym/plimsoll",
+      "stars": 0,
+      "kb": 9101,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "satoshicancode/weletic-room-public",
+      "stars": 0,
+      "kb": 12225,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Maxaubert/Prism",
+      "stars": 0,
+      "kb": 108589,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "rmems/shipoftheseus.dev",
+      "stars": 0,
+      "kb": 4724,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "biginkc/sandra",
+      "stars": 0,
+      "kb": 87515,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "kumoshitaakira/Taskcal",
+      "stars": 0,
+      "kb": 1312,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "stynx-nyx/stynx",
+      "stars": 0,
+      "kb": 19796,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Migz93/pacearr",
+      "stars": 0,
+      "kb": 6394,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "Baodaica/wp-codex",
+      "stars": 0,
+      "kb": 17106,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "zhouy1017/ai7-harness",
+      "stars": 0,
+      "kb": 15966,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "L3x-00/OFICIO_APP",
+      "stars": 0,
+      "kb": 205132,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "PearlThoughts/Sarathi",
+      "stars": 0,
+      "kb": 6787,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "lmmoreira/ikaro",
+      "stars": 0,
+      "kb": 13756,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "wonchance-art/manabi",
+      "stars": 0,
+      "kb": 127110,
+      "language": "JavaScript"
+    },
+    {
+      "repo": "lieranderl/qwik-aestheticlab",
+      "stars": 0,
+      "kb": 21061,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "clhuang224/bus",
+      "stars": 0,
+      "kb": 2765,
+      "language": "TypeScript"
+    },
+    {
+      "repo": "vfez1/sigil-tools",
+      "stars": 0,
+      "kb": 911,
+      "language": "JavaScript"
+    }
+  ]
+}

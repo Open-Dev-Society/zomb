@@ -1,0 +1,215 @@
+<title>The State of AI Code</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: one reading column; every finding is a claim, one paired chart (each agent against the humans in its own repos), then how sure we are */
+:root{
+  --paper:#f4f5f1;--ink:#16191b;--muted:#5b6266;--rule:#d9dcd5;--panel:#ebede7;--human:#8b9296;
+  --claude:#c05a37;--cursor:#3b4047;--codex:#0c7f62;--copilot:#6f43d1;--devin:#1b6ea8;--jules:#9c7100;
+  --display:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;--body:'IBM Plex Sans',system-ui,-apple-system,sans-serif;--mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--paper:#121416;--ink:#e9ebe6;--muted:#9aa19c;--rule:#2b2f31;--panel:#1b1e20;--human:#80888c;--claude:#e38a67;--cursor:#c7ccd2;--codex:#3fc29a;--copilot:#a888f3;--devin:#5aa6de;--jules:#e0b43f;color-scheme:dark}}
+:root[data-theme="dark"]{--paper:#121416;--ink:#e9ebe6;--muted:#9aa19c;--rule:#2b2f31;--panel:#1b1e20;--human:#80888c;--claude:#e38a67;--cursor:#c7ccd2;--codex:#3fc29a;--copilot:#a888f3;--devin:#5aa6de;--jules:#e0b43f;color-scheme:dark}
+body{background:var(--paper);color:var(--ink);font:16px/1.6 var(--body);-webkit-font-smoothing:antialiased}
+main{max-width:46rem;margin:0 auto;padding-inline:16px;padding-block:56px 96px;display:flex;flex-direction:column;gap:72px}
+h1,h2{font-family:var(--display);text-wrap:balance;margin:0}
+h1{font-size:clamp(2.6rem,8vw,4.4rem);font-weight:800;line-height:.95;letter-spacing:-.035em}
+h2{font-size:clamp(1.5rem,4vw,2rem);font-weight:800;line-height:1.1;letter-spacing:-.02em}
+p{margin:0;max-width:65ch}
+.hero{display:flex;flex-direction:column;gap:18px}
+.trailer{font:500 13px/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.trailer b{color:var(--ink);font-weight:500}
+.dek{font-size:1.2rem;line-height:1.5}
+.facts{display:flex;flex-wrap:wrap;gap:8px 28px;font:13px/1.4 var(--mono);color:var(--muted);border-top:1px solid var(--rule);padding-top:14px}
+.facts b{display:block;font:600 1.35rem/1.2 var(--body);color:var(--ink);font-variant-numeric:tabular-nums}
+section{display:flex;flex-direction:column;gap:14px}
+.eyebrow{font:500 12px/1 var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.chart{margin:10px 0 0;display:flex;flex-direction:column;gap:2px;min-width:0}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font:12px/1.4 var(--mono);color:var(--muted);margin-bottom:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}.legend .unit{margin-left:auto}
+.legend .dot{position:static;transform:none}.legend .dot.agent{background:var(--ink);border-color:var(--ink)}
+.row{display:grid;grid-template-columns:6.2rem minmax(0,1fr) 7.6rem;align-items:center;gap:12px;min-height:44px;border-bottom:1px solid var(--rule)}
+.row.axis{border:0;min-height:24px}
+.who{font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap;line-height:1.2}
+.who small{flex-basis:100%;padding-left:18px;font:400 11px/1.2 var(--mono);color:var(--muted)}
+.swatch{width:10px;height:10px;border-radius:50%;background:var(--human)}
+.track{position:relative;height:24px}
+.axis .track span{position:absolute;transform:translateX(-50%);font:11px/24px var(--mono);color:var(--muted)}
+.bar{position:absolute;top:11px;height:2px;background:var(--rule)}
+.dot{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;transform:translate(-50%,-50%);border:2px solid transparent;display:inline-block}
+.dot.human{background:var(--paper);border-color:var(--human)}
+.claude{background:var(--claude)}.cursor{background:var(--cursor)}.codex{background:var(--codex)}.copilot{background:var(--copilot)}.devin{background:var(--devin)}.jules{background:var(--jules)}.swatch.human{background:var(--human)}
+.dot.claude,.dot.cursor,.dot.codex,.dot.copilot,.dot.devin,.dot.jules{border-color:var(--paper)}
+.stat{font-variant-numeric:tabular-nums;text-align:right;line-height:1.25}
+.stat b{font-weight:600}.stat span{color:var(--muted);font-size:14px}
+.stat small{display:block;font:11px/1.3 var(--mono);color:var(--muted)}
+.stat.unclear b{color:var(--muted);font-weight:500}
+.note{font-size:14px;color:var(--muted)}
+.table-wrap{overflow-x:auto;border-top:1px solid var(--rule)}
+table{border-collapse:collapse;width:100%;min-width:34rem;font-variant-numeric:tabular-nums}
+th,td{padding:10px 8px;border-bottom:1px solid var(--rule);text-align:right;font-size:14px}
+th{font:500 11px/1.3 var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.05em;vertical-align:bottom}
+th:first-child,td:first-child{text-align:left}
+td:first-child{font-weight:600;white-space:nowrap}
+.method{font-size:15px;color:var(--muted);gap:10px}.method h2{color:var(--ink)}.method strong{color:var(--ink);font-weight:600}
+.method ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:8px;max-width:65ch}
+.cta{border-top:1px solid var(--rule);padding-top:28px;display:flex;flex-direction:column;gap:12px}
+code{font:14px var(--mono);background:var(--panel);padding:2px 6px;border-radius:4px}
+.cmd{font:500 15px var(--mono);background:var(--panel);padding:14px 16px;border-radius:8px;overflow-x:auto;white-space:nowrap}
+a{color:inherit;text-underline-offset:3px}
+@media (max-width:560px){.row{grid-template-columns:4.6rem minmax(0,1fr) 5.8rem;gap:8px}.who small{padding-left:0}.who .swatch{display:none}.legend .unit{margin-left:0;flex-basis:100%}}
+</style>
+<main>
+<header class="hero">
+  <p class="trailer">Co-Authored-By: <b>Claude</b>, <b>Cursor</b>, <b>Codex</b>, <b>Copilot</b>, <b>Devin</b>, <b>Jules</b></p>
+  <h1>The State of AI Code</h1>
+  <p class="dek">What 6 coding agents leave behind, measured commit by commit in 336 public JavaScript and TypeScript repos, and compared with the humans working in those same repos.</p>
+  <div class="facts"><span><b>336</b>repos</span><span><b>52,688</b>commits</span><span><b>18.7M</b>lines added</span><span><b>Oct 2025–Sep 2026</b>window</span></div>
+</header>
+
+<section>
+  <p class="eyebrow">Lines deleted for every 100 added</p>
+  <h2>Claude, Copilot and Jules delete 36–62% less than the humans they work with.</h2>
+  <p>A healthy codebase gets pruned: old versions removed, dead helpers deleted, two ways of doing a thing folded into one. Claude, Copilot and Jules deleted clearly less for each line they added than the humans committing to the same repos. No agent deleted more. For Cursor, Codex and Devin, the difference is within the noise.</p>
+  <figure class="chart" role="img" aria-label="lines deleted per 100 added, each agent against the humans in the same repos">
+<div class="legend"><span><i class="dot human"></i>humans in the same repos</span><span><i class="dot agent"></i>the agent</span><span class="unit">lines deleted per 100 added</span></div>
+<div class="row">
+  <div class="who"><span class="swatch copilot"></span>Copilot<small>23 repos</small></div>
+  <div class="track"><span class="bar" style="left:30.666666666666664%;width:calc(79.73333333333333% - 30.666666666666664%)"></span><span class="dot human" style="left:79.73333333333333%" title="Humans: 48"></span><span class="dot copilot" style="left:30.666666666666664%" title="Copilot: 18"></span></div>
+  <div class="stat "><b>18</b> <span>vs 48</span><small>0.38× (0.24–0.64)</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch jules"></span>Jules<small>19 repos</small></div>
+  <div class="track"><span class="bar" style="left:45.78333333333333%;width:calc(76.56666666666666% - 45.78333333333333%)"></span><span class="dot human" style="left:76.56666666666666%" title="Humans: 46"></span><span class="dot jules" style="left:45.78333333333333%" title="Jules: 27"></span></div>
+  <div class="stat "><b>27</b> <span>vs 46</span><small>0.60× (0.42–0.90)</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch claude"></span>Claude<small>129 repos</small></div>
+  <div class="track"><span class="bar" style="left:34.983333333333334%;width:calc(54.58333333333333% - 34.983333333333334%)"></span><span class="dot human" style="left:54.58333333333333%" title="Humans: 33"></span><span class="dot claude" style="left:34.983333333333334%" title="Claude: 21"></span></div>
+  <div class="stat "><b>21</b> <span>vs 33</span><small>0.64× (0.48–0.84)</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch cursor"></span>Cursor<small>66 repos</small></div>
+  <div class="track"><span class="bar" style="left:43.96666666666667%;width:calc(49.95% - 43.96666666666667%)"></span><span class="dot human" style="left:49.95%" title="Humans: 30"></span><span class="dot cursor" style="left:43.96666666666667%" title="Cursor: 26"></span></div>
+  <div class="stat unclear"><b>26</b> <span>vs 30</span><small>within noise</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch codex"></span>Codex<small>45 repos</small></div>
+  <div class="track"><span class="bar" style="left:37%;width:calc(40.13333333333333% - 37%)"></span><span class="dot human" style="left:37%" title="Humans: 22"></span><span class="dot codex" style="left:40.13333333333333%" title="Codex: 24"></span></div>
+  <div class="stat unclear"><b>24</b> <span>vs 22</span><small>within noise</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch devin"></span>Devin<small>22 repos</small></div>
+  <div class="track"><span class="bar" style="left:68.05%;width:calc(78.68333333333334% - 68.05%)"></span><span class="dot human" style="left:68.05%" title="Humans: 41"></span><span class="dot devin" style="left:78.68333333333334%" title="Devin: 47"></span></div>
+  <div class="stat unclear"><b>47</b> <span>vs 41</span><small>within noise</small></div>
+</div>
+<div class="row axis"><div></div><div class="track"><span style="left:0%">0</span><span style="left:33.33333333333333%">20</span><span style="left:66.66666666666666%">40</span><span style="left:100%">60</span></div><div></div></div>
+</figure>
+  <p class="note">Each row compares an agent with the humans in the repos where both wrote at least 300 lines. The range is a 90% bootstrap interval over repos: “within noise” means it includes 1×.</p>
+</section>
+
+<section>
+  <p class="eyebrow">Commit size</p>
+  <h2>Claude, Cursor and Codex add 1.8–2.3× as many lines per commit as humans.</h2>
+  <p>The median human commit added 63 lines of JavaScript or TypeScript. Big commits are harder to review, and review is where dead code and shortcuts get caught.</p>
+  <figure class="chart" role="img" aria-label="Median lines added per commit">
+<div class="legend"><span class="unit">median lines added per commit</span></div>
+<div class="row"><div class="who"><span class="swatch copilot"></span>Copilot</div><div class="track"><span class="bar" style="left:0;width:13.333333333333334%"></span><span class="dot copilot" style="left:13.333333333333334%"></span></div><div class="stat"><b>20</b> <span>lines</span></div></div><div class="row"><div class="who"><span class="swatch devin"></span>Devin</div><div class="track"><span class="bar" style="left:0;width:30.666666666666664%"></span><span class="dot devin" style="left:30.666666666666664%"></span></div><div class="stat"><b>46</b> <span>lines</span></div></div><div class="row"><div class="who"><span class="swatch jules"></span>Jules</div><div class="track"><span class="bar" style="left:0;width:32.666666666666664%"></span><span class="dot jules" style="left:32.666666666666664%"></span></div><div class="stat"><b>49</b> <span>lines</span></div></div><div class="row"><div class="who"><span class="swatch human"></span>Humans</div><div class="track"><span class="bar" style="left:0;width:42%"></span><span class="dot human" style="left:42%"></span></div><div class="stat"><b>63</b> <span>lines</span></div></div><div class="row"><div class="who"><span class="swatch codex"></span>Codex</div><div class="track"><span class="bar" style="left:0;width:76.66666666666667%"></span><span class="dot codex" style="left:76.66666666666667%"></span></div><div class="stat"><b>115</b> <span>lines</span></div></div><div class="row"><div class="who"><span class="swatch claude"></span>Claude</div><div class="track"><span class="bar" style="left:0;width:79.33333333333333%"></span><span class="dot claude" style="left:79.33333333333333%"></span></div><div class="stat"><b>119</b> <span>lines</span></div></div><div class="row"><div class="who"><span class="swatch cursor"></span>Cursor</div><div class="track"><span class="bar" style="left:0;width:94.66666666666667%"></span><span class="dot cursor" style="left:94.66666666666667%"></span></div><div class="stat"><b>142</b> <span>lines</span></div></div>
+<div class="row axis"><div></div><div class="track"><span style="left:0%">0</span><span style="left:33.33333333333333%">50</span><span style="left:66.66666666666666%">100</span><span style="left:100%">150</span></div><div></div></div>
+</figure>
+</section>
+
+<section>
+  <p class="eyebrow">Shortcuts per 1,000 lines added</p>
+  <h2>Claude and Codex take fewer shortcuts than the humans they work with.</h2>
+  <p>A shortcut makes a check pass without fixing what it found: <code>@ts-ignore</code>, <code>eslint-disable</code> without a reason, <code>as any</code>, <code>.skip</code> and <code>.only</code> on tests, an empty <code>catch</code>, or a branch on <code>NODE_ENV === 'test'</code>.  For Cursor, Copilot, Devin and Jules, the sample can't tell them apart from humans. For every author, humans included, the most common shortcut is <code>as any</code>.</p>
+  <figure class="chart" role="img" aria-label="shortcuts per 1,000 lines added, each agent against the humans in the same repos">
+<div class="legend"><span><i class="dot human"></i>humans in the same repos</span><span><i class="dot agent"></i>the agent</span><span class="unit">shortcuts per 1,000 lines added</span></div>
+<div class="row">
+  <div class="who"><span class="swatch codex"></span>Codex<small>45 repos</small></div>
+  <div class="track"><span class="bar" style="left:18.666666666666668%;width:calc(38.99999999999999% - 18.666666666666668%)"></span><span class="dot human" style="left:38.99999999999999%" title="Humans: 1.17"></span><span class="dot codex" style="left:18.666666666666668%" title="Codex: 0.56"></span></div>
+  <div class="stat "><b>0.56</b> <span>vs 1.17</span><small>0.48× (0.24–0.84)</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch claude"></span>Claude<small>129 repos</small></div>
+  <div class="track"><span class="bar" style="left:23%;width:calc(35% - 23%)"></span><span class="dot human" style="left:35%" title="Humans: 1.05"></span><span class="dot claude" style="left:23%" title="Claude: 0.69"></span></div>
+  <div class="stat "><b>0.69</b> <span>vs 1.05</span><small>0.66× (0.49–0.88)</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch jules"></span>Jules<small>19 repos</small></div>
+  <div class="track"><span class="bar" style="left:80%;width:calc(81.33333333333333% - 80%)"></span><span class="dot human" style="left:81.33333333333333%" title="Humans: 2.44"></span><span class="dot jules" style="left:80%" title="Jules: 2.40"></span></div>
+  <div class="stat unclear"><b>2.40</b> <span>vs 2.44</span><small>within noise</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch cursor"></span>Cursor<small>66 repos</small></div>
+  <div class="track"><span class="bar" style="left:37.00000000000001%;width:calc(48.333333333333336% - 37.00000000000001%)"></span><span class="dot human" style="left:37.00000000000001%" title="Humans: 1.11"></span><span class="dot cursor" style="left:48.333333333333336%" title="Cursor: 1.45"></span></div>
+  <div class="stat unclear"><b>1.45</b> <span>vs 1.11</span><small>within noise</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch devin"></span>Devin<small>22 repos</small></div>
+  <div class="track"><span class="bar" style="left:39.33333333333333%;width:calc(69% - 39.33333333333333%)"></span><span class="dot human" style="left:39.33333333333333%" title="Humans: 1.18"></span><span class="dot devin" style="left:69%" title="Devin: 2.07"></span></div>
+  <div class="stat unclear"><b>2.07</b> <span>vs 1.18</span><small>within noise</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch copilot"></span>Copilot<small>23 repos</small></div>
+  <div class="track"><span class="bar" style="left:28.333333333333332%;width:calc(56.333333333333336% - 28.333333333333332%)"></span><span class="dot human" style="left:28.333333333333332%" title="Humans: 0.85"></span><span class="dot copilot" style="left:56.333333333333336%" title="Copilot: 1.69"></span></div>
+  <div class="stat unclear"><b>1.69</b> <span>vs 0.85</span><small>within noise</small></div>
+</div>
+<div class="row axis"><div></div><div class="track"><span style="left:0%">0</span><span style="left:33.33333333333333%">1</span><span style="left:66.66666666666666%">2</span><span style="left:100%">3</span></div><div></div></div>
+</figure>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Per 1,000 lines</th><th>as any</th><th>lint rule off</th><th>@ts-ignore</th><th>empty catch</th><th>.skip</th><th>.only</th></tr></thead>
+    <tbody><tr><td>Humans</td><td>0.58</td><td>0.23</td><td>0.16</td><td>0.08</td><td>0.03</td><td>0.00</td></tr><tr><td>Claude</td><td>0.28</td><td>0.25</td><td>0.05</td><td>0.03</td><td>0.01</td><td>0.05</td></tr><tr><td>Cursor</td><td>1.01</td><td>0.09</td><td>0.10</td><td>0.07</td><td>0.06</td><td>0.00</td></tr><tr><td>Codex</td><td>0.36</td><td>0.06</td><td>0.02</td><td>0.07</td><td>0.04</td><td>0.00</td></tr><tr><td>Copilot</td><td>1.06</td><td>0.09</td><td>0.18</td><td>0.08</td><td>0.02</td><td>0.00</td></tr><tr><td>Devin</td><td>0.72</td><td>0.43</td><td>0.00</td><td>0.43</td><td>0.00</td><td>0.00</td></tr><tr><td>Jules</td><td>0.98</td><td>0.20</td><td>0.05</td><td>0.76</td><td>0.00</td><td>0.00</td></tr></tbody>
+  </table></div>
+</section>
+
+<section>
+  <p class="eyebrow">Dead code per 1,000 lines added</p>
+  <h2>Claude, Copilot and Devin leave less of their own code dead than humans do.</h2>
+  <p>Lines each author wrote in the last year that now sit in files nothing imports or names. Claude, Copilot and Devin left clearly less of their own code dead than the humans in the same repos. Dead lines are credited to whoever wrote them, not to whoever stopped using them: when an agent writes a replacement and leaves the old file behind, those lines count against the person who wrote the original. Read it together with the deletion numbers above. This is also the noisiest measure here, since a file only a framework loads by name can look unused.</p>
+  <figure class="chart" role="img" aria-label="dead lines per 1,000 added, each agent against the humans in the same repos">
+<div class="legend"><span><i class="dot human"></i>humans in the same repos</span><span><i class="dot agent"></i>the agent</span><span class="unit">dead lines per 1,000 added</span></div>
+<div class="row">
+  <div class="who"><span class="swatch copilot"></span>Copilot<small>22 repos</small></div>
+  <div class="track"><span class="bar" style="left:0.65%;width:calc(46.900000000000006% - 0.65%)"></span><span class="dot human" style="left:46.900000000000006%" title="Humans: 9.4"></span><span class="dot copilot" style="left:0.65%" title="Copilot: 0.1"></span></div>
+  <div class="stat "><b>0.1</b> <span>vs 9.4</span><small>0.01× (0.00–0.08)</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch devin"></span>Devin<small>22 repos</small></div>
+  <div class="track"><span class="bar" style="left:5.550000000000001%;width:calc(49.00000000000001% - 5.550000000000001%)"></span><span class="dot human" style="left:49.00000000000001%" title="Humans: 9.8"></span><span class="dot devin" style="left:5.550000000000001%" title="Devin: 1.1"></span></div>
+  <div class="stat "><b>1.1</b> <span>vs 9.8</span><small>0.11× (0.03–0.53)</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch jules"></span>Jules<small>19 repos</small></div>
+  <div class="track"><span class="bar" style="left:13.5%;width:calc(75.85% - 13.5%)"></span><span class="dot human" style="left:75.85%" title="Humans: 15.2"></span><span class="dot jules" style="left:13.5%" title="Jules: 2.7"></span></div>
+  <div class="stat unclear"><b>2.7</b> <span>vs 15.2</span><small>within noise</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch claude"></span>Claude<small>126 repos</small></div>
+  <div class="track"><span class="bar" style="left:5.699999999999999%;width:calc(18.65% - 5.699999999999999%)"></span><span class="dot human" style="left:18.65%" title="Humans: 3.7"></span><span class="dot claude" style="left:5.699999999999999%" title="Claude: 1.1"></span></div>
+  <div class="stat "><b>1.1</b> <span>vs 3.7</span><small>0.31× (0.10–0.80)</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch codex"></span>Codex<small>43 repos</small></div>
+  <div class="track"><span class="bar" style="left:2.5500000000000003%;width:calc(4.55% - 2.5500000000000003%)"></span><span class="dot human" style="left:4.55%" title="Humans: 0.9"></span><span class="dot codex" style="left:2.5500000000000003%" title="Codex: 0.5"></span></div>
+  <div class="stat unclear"><b>0.5</b> <span>vs 0.9</span><small>within noise</small></div>
+</div><div class="row">
+  <div class="who"><span class="swatch cursor"></span>Cursor<small>64 repos</small></div>
+  <div class="track"><span class="bar" style="left:22.05%;width:calc(27.450000000000003% - 22.05%)"></span><span class="dot human" style="left:22.05%" title="Humans: 4.4"></span><span class="dot cursor" style="left:27.450000000000003%" title="Cursor: 5.5"></span></div>
+  <div class="stat unclear"><b>5.5</b> <span>vs 4.4</span><small>within noise</small></div>
+</div>
+<div class="row axis"><div></div><div class="track"><span style="left:0%">0</span><span style="left:25%">5</span><span style="left:50%">10</span><span style="left:75%">15</span><span style="left:100%">20</span></div><div></div></div>
+</figure>
+</section>
+
+<section>
+  <p class="eyebrow">Keys pasted into code</p>
+  <h2>31 live-looking API keys in 18.7M lines.</h2>
+  <p>Keys matching known formats (Stripe, OpenAI, Anthropic, AWS, GitHub and others) added to non-test code. Humans: 23, Claude: 3, Cursor: 1, Codex: 1, Devin: 1, Jules: 2. They were counted, never stored or published.</p>
+</section>
+
+<section class="method">
+  <p class="eyebrow">Method</p>
+  <h2>How this was measured</h2>
+  <ul>
+    <li><strong>Repos.</strong> Public, non-fork JavaScript and TypeScript repos under 300 MB with commits signed by each agent, found with GitHub commit search (for example the <code>Co-Authored-By: Claude</code> trailer, <code>cursoragent@cursor.com</code>, or commits by <code>copilot-swe-agent[bot]</code>), up to 60 of the most-starred per agent.</li>
+    <li><strong>Commits.</strong> The last 400 commits of each repo's default branch, counting non-merge commits since October 1, 2025, by everyone. A commit belongs to an agent when the agent is its author or co-author. Build output, vendored and minified files, files adding over 3,000 lines and commits adding over 20,000 are skipped as generated.</li>
+    <li><strong>“Humans”</strong> means commits no agent signed. Agents that don't sign their commits count as human here, so the gaps shown are, if anything, smaller than the real ones.</li>
+    <li><strong>Dead code</strong> is a file no other file imports or names, outside folders frameworks load by path, with its lines credited through <code>git blame</code>. Repos using auto-imports (Nuxt) are left out of this measure.</li>
+    <li><strong>Uncertainty.</strong> Each range resamples repos 1,000 times. Agents differ in which repos they work in, so every comparison is against the humans in the same repos.</li>
+    <li>Everything here was measured by <a href="https://github.com/Open-Dev-Society/zomb">zomb</a>, and the script that produced it is in its repo, so you can check the work.</li>
+  </ul>
+</section>
+
+<footer class="cta">
+  <h2>Check your own repo</h2>
+  <p>zomb finds the dead code, shortcuts, sprawl and security holes in any JavaScript or TypeScript repo, and its Guard stops an agent from adding more while it works.</p>
+  <div class="cmd">npx zomb</div>
+</footer>
+</main>
