@@ -18,6 +18,20 @@ zomb --since main         # only what your branch changed, plus the shortcuts it
 zomb --since HEAD         # only your uncommitted work
 ```
 
+## Compared with 336 public repos
+
+Every whole-repo scan ends with how this repo compares against [The State of AI Code](research/): 52,688 commits in 336 public JS/TS repos since October 2025, measured the same way.
+
+```
+VS 336 PUBLIC REPOS ──────────────────────── agents wrote 100% of your new code
+  this repo deletes 54 lines per 100 added              above the human average
+  study humans 33 · Claude 21 · Copilot 22 · Codex 24 · Cursor 25 · Jules 29
+        Devin 37
+  your median commit adds 199 lines; a human commit in the study adds 63
+```
+
+It stays quiet on a repo with less than 2,000 lines or 5 commits in that window, and in `--since` mode, where there is no history to compare.
+
 ## Guard: stop the mess as the agent writes it
 
 With the plugin installed, Claude Code runs zomb before every file edit. It checks only the lines being added and takes about 40 ms.

@@ -13,6 +13,7 @@ import { toTasks, fingerprint, toMarkdown } from './tasks.ts';
 import { render, spinner, ui, renderBlueprint } from './terminal.ts';
 import { infer, toRules, breaks, toYaml, readBlueprint, FILE as BLUEPRINT } from './blueprint.ts';
 import { fix } from './fix.ts';
+import { benchmark } from './benchmark.ts';
 import type { Rules, ScanData, Task, ZombieFile } from './types.ts';
 
 /** Anything thrown: Node mixes Error, exec failures with stdout/stderr, and JSON parse errors. */
@@ -106,7 +107,7 @@ async function knip() {
 async function commits() {
   const out = await sh('git', ['log', '--numstat', '--no-renames', '--format=%x1e%H%x00%aI%x00%an <%ae>%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)'], root);
   const agentOf = new Map<string, string | null>();
-  const history: { sha: string; date: string; files: { path: string; added: number; deleted: number }[] }[] = [];
+  const history: { sha: string; date: string; agent: string | null; files: { path: string; added: number; deleted: number }[] }[] = [];
   for (const rec of out.split('\x1e')) {
     const [head, ...stat] = rec.split('\n');
     const [sha, date, author, trailers = ''] = head.split('\0');
@@ -114,7 +115,7 @@ async function commits() {
     const agent = [author, ...trailers.split('\x1f')].map((p) => p.trim()).find((p) => p && isAgent(p));
     agentOf.set(sha, agent ? agent.replace(/\s*(\(.*\))?\s*<.*$/, '') : null);
     const files = stat.map((l) => l.split('\t')).filter(([a, , p]) => p && CODE.test(p) && a !== '-').map(([a, d, p]) => ({ path: p, added: Number(a), deleted: Number(d) }));
-    history.push({ sha, date, files });
+    history.push({ sha, date, agent: agentOf.get(sha) ?? null, files });
   }
   return { agentOf, history };
 }
@@ -239,6 +240,8 @@ let data: ScanData = {
   sprawl: { months, recent, dupes, names: sameNames(parsed), versions: versionSprawl(files), overlaps: overlaps(packages) },
   architecture: { cycles: loops, big, shared: sharedFolders(files), deep, naming: namingStyles(files) },
   blueprint: rules && { broken },
+  // only in a whole-repo scan: a diff has no history to compare
+  benchmark: opts.since ? null : benchmark(history, months),
 };
 // --since: report only what this change touched, plus the shortcuts it took
 if (opts.since) {

@@ -152,6 +152,16 @@ export function render(
     if (a.deep.length) L.push(row(dim(`${plural(a.deep.length, 'file')} with ../../../ imports`)));
   }
 
+  // ── how this repo compares with the study
+  const bm = data.benchmark;
+  if (bm) {
+    const worse = bm.deletedPer100 < bm.humans;
+    L.push('', rule('VS 336 PUBLIC REPOS', dim(`agents wrote ${bm.agentShare}% of your new code`)));
+    L.push(row(`this repo deletes ${bold(String(bm.deletedPer100))} lines per 100 added`, (worse ? yellow : green)(worse ? 'below the human average' : 'above the human average')));
+    L.push(...wrap(dim('study'), [`humans ${bm.humans}`, ...bm.agents.map((a) => `${a.name} ${a.deletedPer100}`)]));
+    if (bm.medianCommit > bm.humanMedianCommit * 1.5) L.push(row(dim(`your median commit adds ${n(bm.medianCommit)} lines; a human commit in the study adds ${n(bm.humanMedianCommit)}`)));
+  }
+
   // ── what to do next
   const safe = tasks.filter((t) => t.safe).length;
   const fresh = baseline ? tasks.filter((t) => t.new).length : null;

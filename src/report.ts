@@ -78,7 +78,20 @@ function blueprintSection(blueprint: ScanData['blueprint']) {
   <p class="muted">The rules in <code>.zomb/blueprint.yml</code>: the libraries, folders, names and limits this codebase agreed on.</p>
   ${blueprint.broken.length ? `<ul class="items">${blueprint.broken.map((b) => `<li><span class="sev high">rule</span><div><b>${esc(b.why)}</b> ${code(b.file || '')}</div></li>`).join('')}</ul>` : '<p>Every file follows it.</p>'}</section>`;
 }
-export function renderReport({ repo, commit, date, files, lines, knipError, zombie, security, sprawl, architecture, shortcuts, since, blueprint }: ScanData): string {
+function benchmarkSection(bm: ScanData['benchmark']) {
+  if (!bm) return '';
+  const worse = bm.deletedPer100 < bm.humans;
+  return `<section id="benchmark"><h2>Compared with ${n(bm.study.repos)} public repos</h2>
+  <p class="muted">From <a href="${esc(bm.study.url)}">The State of AI Code</a>: ${n(bm.study.commits)} commits in ${n(bm.study.repos)} public JS/TS repos since ${esc(bm.study.since)}, measured the same way as the numbers below.</p>
+  <p>Since ${esc(bm.study.since)} this repo added ${n(bm.added)} lines across ${n(bm.commits)} commits, ${bm.agentShare}% of them signed by an agent${bm.agentNames.length ? ` (${esc(bm.agentNames.join(', '))})` : ''}. It deletes <b>${bm.deletedPer100}</b> lines per 100 added, ${worse ? 'below' : 'above'} the ${bm.humans} that humans in the study delete.</p>
+  <table><thead><tr><th>Author</th><th>Lines deleted per 100 added</th></tr></thead><tbody>
+  <tr><td><b>this repo</b></td><td><b>${bm.deletedPer100}</b></td></tr>
+  <tr><td>humans in the study</td><td>${bm.humans}</td></tr>
+  ${bm.agents.map((a) => `<tr><td>${esc(a.name)}</td><td>${a.deletedPer100}</td></tr>`).join('')}</tbody></table>
+  <p class="muted">Median commit here adds ${n(bm.medianCommit)} lines; a human commit in the study adds ${n(bm.humanMedianCommit)}.</p></section>`;
+}
+
+export function renderReport({ repo, commit, date, files, lines, knipError, zombie, security, sprawl, architecture, shortcuts, since, blueprint, benchmark }: ScanData): string {
   const high = security.findings.filter((f) => f.severity === 'high').length;
   const zLines = zombie.files.reduce((s, f) => s + f.lines, 0);
   const added = sprawl.recent.reduce((s, m) => s + m.added, 0);
@@ -115,6 +128,7 @@ ${blueprintSection(blueprint)}
 ${shortcutsSection(shortcuts)}
 ${zombieSection(zombie, knipError)}
 ${sprawlSection(sprawl)}
+${benchmarkSection(benchmark)}
 ${architectureSection(architecture)}
 <footer><p><b>How this is checked.</b> Security: known key formats in every tracked file (shown masked), committed .env files, secret-looking NEXT_PUBLIC_/VITE_ variables, API routes that change data or touch the database or payments with no auth, session, API-key or signature check in them or their imports, string-built SQL and shell commands, eval, raw HTML, disabled TLS, and npm audit for production packages.</p>
 <p>Zombie code: Knip finds no import of the file and no other file names its path, or only its own tests import it. Files started by path, dot-folders and *.config.* files always count as in use. Sprawl and architecture come from git history, the import graph (oxc), and jscpd for copy-paste. Everything runs on your machine.</p></footer>

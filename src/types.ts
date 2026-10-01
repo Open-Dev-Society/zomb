@@ -63,6 +63,8 @@ export type ScanData = {
   sprawl: { months: Month[]; recent: Month[]; dupes: Clone[] | null; names: { name: string; files: string[] }[]; versions: Version[]; overlaps: Overlap[] };
   architecture: { cycles: string[][]; big: { file: string; lines: number; dependents: number }[]; shared: string[]; deep: { file: string; count: number }[]; naming: [string, number][] };
   blueprint?: { broken: BrokenRule[] } | null;
+  /** how this repo compares with the State of AI Code study */
+  benchmark?: import('./benchmark.ts').Benchmark | null;
 };
 
 /** One thing to fix, for an agent, CI or a person. `safe` means a build can prove it. */

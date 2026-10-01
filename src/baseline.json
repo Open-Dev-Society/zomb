@@ -1,0 +1,46 @@
+{
+  "study": {
+    "repos": 336,
+    "commits": 52688,
+    "lines": 18719425,
+    "since": "2025-10-01",
+    "url": "https://github.com/Open-Dev-Society/zomb/tree/main/research"
+  },
+  "authors": {
+    "Human": {
+      "deletedPer100": 33.07,
+      "medianCommit": 63,
+      "addedShare": 0.425
+    },
+    "Claude": {
+      "deletedPer100": 20.77,
+      "medianCommit": 119,
+      "addedShare": 0.383
+    },
+    "Cursor": {
+      "deletedPer100": 25.33,
+      "medianCommit": 142,
+      "addedShare": 0.098
+    },
+    "Codex": {
+      "deletedPer100": 23.9,
+      "medianCommit": 115,
+      "addedShare": 0.055
+    },
+    "Copilot": {
+      "deletedPer100": 21.85,
+      "medianCommit": 20,
+      "addedShare": 0.018
+    },
+    "Devin": {
+      "deletedPer100": 36.6,
+      "medianCommit": 46,
+      "addedShare": 0.017
+    },
+    "Jules": {
+      "deletedPer100": 28.58,
+      "medianCommit": 49,
+      "addedShare": 0.004
+    }
+  }
+}
