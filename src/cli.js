@@ -179,7 +179,7 @@ const byAgent = await authorship(zombieFiles, agentOf);
 const zombies = zombieFiles
   .map((f) => {
     // a standalone script nothing references is probably run by hand (node scripts/seed.mjs): ask, don't delete
-    const script = /(^|\/)(scripts?|bin|tools)\//.test(f) || (!f.includes('/') && /\.[cm]?js$/.test(f));
+    const script = /(^|\/)(scripts?|bin|tools)\//.test(f) || parsed.get(f).main || (!f.includes('/') && /\.[cm]?js$/.test(f));
     const why = script ? 'A standalone script nothing references: maybe you run it by hand' : unused.has(f) ? 'Nothing imports or names it' : 'Only its own tests import it';
     return { path: f, lines: parsed.get(f).lines, why, script, committed: tracked.has(f), ...byAgent.get(f) };
   })

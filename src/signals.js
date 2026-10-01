@@ -64,6 +64,7 @@ export async function parseAll(root, files) {
       deep: specs.filter((s) => /^(\.\.\/){3,}/.test(s)).length,
       alias: [...new Set(specs.map((s) => s.match(/^[@~#]\//)?.[0]).filter(Boolean))],
       fetch: /(?<![\w.])fetch\s*\(/.test(src),
+      main: /^#!|import\.meta\.url\s*===|require\.main\s*===\s*module/.test(src),
       dangerous: findDangerous(src, { shell: surfaces.includes('shell') }),
       route: routeFacts(file, src),
     });

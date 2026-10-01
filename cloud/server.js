@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { github, verify } from './github.js';
 import { jobs } from './jobs.js';
 
-export function config(env = process.env) {
+function config(env = process.env) {
   const data = env.DATA_DIR || path.join(import.meta.dirname, 'data');
   // written by /setup when the app was created from its manifest; env vars win
   const saved = existsSync(path.join(data, 'app.json')) ? JSON.parse(readFileSync(path.join(data, 'app.json'), 'utf8')) : {};

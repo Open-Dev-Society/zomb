@@ -26,6 +26,12 @@
   "knip": {
     "ignoreDependencies": [
       "jscpd"
+    ],
+    "entry": [
+      "src/bin.js",
+      "cloud/server.js",
+      "research/*.js",
+      "test/*.test.js"
     ]
   }
 }

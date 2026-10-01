@@ -53,7 +53,7 @@ export function publicSecretNames(text) {
 const DANGEROUS = [
   ['high', 'SQL built from a string (injection risk)', /\.(?:query|execute|raw|unsafe|\$queryRawUnsafe|\$executeRawUnsafe)\(\s*`[^`]*\$\{/],
   ['high', 'Shell command built from a string (injection risk)', /(?:(?<![.\w])|\b(?:child_?process|cp)\.)(?:exec|execSync)\(\s*(?:`[^`]*\$\{|[^)'"`,]*\+)/, 'shell'],
-  ['medium', 'eval() or new Function() runs arbitrary code', /(?<![.\w])eval\(|\bnew Function\(/],
+  ['medium', 'eval() or new Function() runs arbitrary code', /(?<![.\w])eval\(|\bnew Function\(/], // zomb-allow: defines the pattern
   // JSON-LD (JSON.stringify(schema)) and SCREAMING_CASE constants are the safe cases; plain .innerHTML = x was too noisy to keep
   ['medium', 'Raw HTML from a variable (XSS risk)', /dangerouslySetInnerHTML=\{\{\s*__html:(?!\s*(?:['"`]|JSON\.stringify\(|[A-Z][A-Z0-9_]*\s*\}))/],
   ['medium', 'TLS certificate checks turned off', /rejectUnauthorized:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]?0/],
@@ -64,7 +64,7 @@ export function findDangerous(text, { shell = false } = {}) {
   // const phaseScript = `...` (no ${}) in the same file: HTML the author wrote, not user input
   const constants = new Set([...text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(['"`])(?:(?!\2|\$\{)[\s\S])*\2/g)].map((m) => m[1]));
   text.split('\n').forEach((l, i) => {
-    if (l.length > 2000 || /^\s*(\/\/|\*)/.test(l)) return;
+    if (l.length > 2000 || /^\s*(\/\/|\*)/.test(l) || /zomb-allow/.test(l)) return;
     for (const [severity, kind, re, needs] of DANGEROUS) {
       if ((needs && !shell) || !re.test(l)) continue;
       if (kind.startsWith('Raw HTML') && constants.has(l.match(/__html:\s*([A-Za-z_$][\w$]*)\s*\}/)?.[1])) continue;
@@ -134,9 +134,11 @@ export async function scanRepo(root, allFiles, tracked = new Set(allFiles)) {
       continue; // a committed env file is reported whole
     }
     const found = findSecrets(text);
-    if (isTest(f)) inTests += found.length;
+    // tests and docs name keys and secret-looking variables as examples: counted, not reported
+    const example = isTest(f) || /\.mdx?$/i.test(f);
+    if (example) inTests += found.length;
     else for (const s of found) secrets.push({ file: f, ...s });
-    for (const name of publicSecretNames(text)) publicVars.set(name, [...(publicVars.get(name) || []), f]);
+    if (!example) for (const name of publicSecretNames(text)) publicVars.set(name, [...(publicVars.get(name) || []), f]);
   }
   return { secrets, envFiles, publicVars: [...publicVars].map(([name, files]) => ({ name, files })), inTests };
 }

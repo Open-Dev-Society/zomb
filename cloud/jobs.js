@@ -116,7 +116,7 @@ export function jobs({ gh, db, appId, log = console.error }) {
 }
 
 // The issue an agent (or a person) works from: the safe clean-up first, then what needs a decision.
-export function weeklyBody(result, handoff, first) {
+function weeklyBody(result, handoff, first) {
   const s = result.summary;
   const line = (t) => `- [ ] **${t.title}**  \n  \`${t.where.replace(/`/g, "'")}\`: ${t.how}`;
   const safe = result.tasks.filter((t) => t.safe);
