@@ -1,0 +1,13 @@
+name: zomb
+on: pull_request
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  zomb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # --since needs the base branch
+      - uses: ./
