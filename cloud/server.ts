@@ -158,180 +158,162 @@ export function start(cfg: ReturnType<typeof config> = config(), { log = console
 }
 
 // ---------- pages: server-rendered, no JavaScript
+//
+// ZOMB SPEC SHEET — the design rules this dashboard follows
+//
+//   1. LIGHT GROUND. The same warm paper as the HTML report and the site, so the three
+//      surfaces read as one product rather than three.
+//   2. COLOUR IS SEVERITY, NEVER DECORATION. Ink is the only brand fill; red, amber and
+//      green mean exactly what they mean in the CLI. Nothing is saturated to look nice.
+//   3. RULES ARE THE STRUCTURE. zomb's own output draws a section as a rule with a label
+//      on the left and a count on the right. That device is promoted from the terminal and
+//      carries the whole layout: hairlines, never shadows; one radius; no cards, no frames.
+//
+// Display sits at 500–600, not 700, and running text recedes from headings.
+
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const num = (x: number) => x.toLocaleString('en-US');
 const study: { study: { repos: number; url: string }; authors: Record<string, { deletedPer100: number }> } = createRequire(import.meta.url)('../src/baseline.json');
 
-// One warm neutral hue (118, the hue of zomb's paper) for every grey, one green accent, and
-// danger/warn kept to single hues so no series shouts louder than another.
+const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@0,400;0,500;0,600&display=swap">`;
+
 const TOKENS = `
 :root{
-  --page:oklch(0.145 0.008 118);--side:oklch(0.195 0.009 118);--sidebar:oklch(0.175 0.008 118);
-  --canvas:oklch(0.968 0.005 118);--bg:oklch(0.995 0.003 118);--shell:oklch(0.943 0.008 118);
-  --line:oklch(0.915 0.008 118);--line-strong:oklch(0.86 0.01 118);
-  --text:oklch(0.225 0.012 118);--muted:oklch(0.52 0.014 118);--faint:oklch(0.67 0.012 118);
-  --hover:oklch(0.955 0.006 118);
-  --accent:oklch(0.56 0.12 158);--accent-strong:oklch(0.49 0.11 158);--accent-ink:oklch(0.33 0.08 158);--accent-soft:oklch(0.94 0.035 158);
-  --bad:oklch(0.551 0.168 32);--bad-ink:oklch(0.44 0.15 32);--bad-soft:oklch(0.94 0.045 32);
-  --warn:oklch(0.562 0.117 78);--warn-soft:oklch(0.945 0.05 78);
-  --ui-ease:cubic-bezier(0.2,0,0,1);--tab-ease:cubic-bezier(0.32,0.72,0,1);
-  --display:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;
-  --ui:'IBM Plex Sans',ui-sans-serif,sans-serif;--mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  --paper:#f4f5f1;      /* page ground, the report's paper */
+  --surface:#fbfbf9;    /* the one lighter plane: table head, inert strips */
+  --ink:#16191b;        /* headings and figures */
+  --body:#44494b;       /* running text, recedes from headings */
+  --mute:#6a7073;       /* labels, captions, units */
+  --faint:#9aa0a2;      /* zeros and absent values */
+  --line:#e2e3dd;       /* hairline */
+  --line-2:#cfd1c9;     /* stronger divider */
+  --high:#c0402a; --high-sub:#fbe9e4;
+  --warn:#9a6b00; --warn-sub:#fdf3dd;
+  --good:#1d7a4f; --good-sub:#e6f3eb;
+  --radius:4px;
+  --display:'Bricolage Grotesque',ui-sans-serif,sans-serif;
+  --ui:'IBM Plex Sans',ui-sans-serif,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  --ease:cubic-bezier(.2,0,0,1);
+  --gutter:clamp(16px,4vw,40px);
 }
 *{box-sizing:border-box;min-width:0}
-html,body{height:100%}
-body{margin:0;background:var(--page);color:var(--text);font:14px/1.45 var(--ui);-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--paper);color:var(--body);font:15px/1.6 var(--ui);-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-family:var(--display);font-weight:600;color:var(--ink);letter-spacing:-.028em;line-height:1.1;text-wrap:balance}
 a{color:inherit;text-decoration:none}
-h1,h2,h3{font-family:var(--display);margin:0;letter-spacing:-.03em;text-wrap:balance}
-.mono{font-family:var(--mono)}
 .num{font-variant-numeric:tabular-nums}
-.muted{color:var(--muted)}.faint{color:var(--faint)}
-.kick{font:600 11px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-svg{display:block}
-.btn{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:10px;padding:9px 13px;font:600 13.5px/1 var(--ui);cursor:pointer;transition:background-color .16s var(--ui-ease),transform .16s var(--ui-ease),color .16s var(--ui-ease)}
-.btn:active{transform:scale(.96)}
-.btn.primary{background:var(--accent);color:oklch(0.99 0.01 158);box-shadow:inset 0 1px 0 oklch(1 0 0/.22),0 6px 18px oklch(0.56 0.12 158/.25)}
-.btn.primary:hover{background:var(--accent-strong)}
-.btn.ghost{background:transparent;color:var(--text);box-shadow:inset 0 0 0 1px var(--line-strong);font-weight:500;padding:7px 11px;font-size:13px;white-space:nowrap}
-.btn.ghost:hover{background:var(--hover)}
-@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+/* the one uppercase style in the system: mono, 10.5px, wide */
+.eyebrow{font:500 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--mute)}
+.btn{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:var(--radius);padding:9px 14px;font:600 13.5px/1 var(--ui);cursor:pointer;background:var(--ink);color:var(--paper);transition:opacity .15s var(--ease),transform .15s var(--ease)}
+.btn:hover{opacity:.86}
+.btn:active{transform:scale(.97)}
+.btn.quiet{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--line-2);font-weight:500;padding:7px 11px;font-size:13px;white-space:nowrap}
+.btn.quiet:hover{background:var(--surface);opacity:1}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
 `;
 
-// The simple document: setup, sign-in, errors. A single floated card on the near-black page.
+// The simple document: sign-in, setup, errors. Same ground, no ornament.
 const page = (title: string, body: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · zomb</title>${FONTS}<style>${TOKENS}
-.solo{min-height:100%;display:grid;place-items:center;padding:24px}
-.solo-card{width:min(34rem,100%);background:var(--bg);border-radius:16px;padding:32px;box-shadow:0 1px 0 oklch(1 0 0/.05),0 12px 40px oklch(0 0 0/.35)}
-.solo-card h1{font-size:34px;font-weight:800;margin-bottom:6px}
-.solo-card p{margin:0 0 14px;color:var(--muted);max-width:46ch}
-.solo-card a:not(.btn){text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-strong)}
-.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:20px}
-</style></head><body><div class="solo"><div class="solo-card">${body}</div></div></body></html>`;
-
-const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@0,400;0,500;0,600&display=swap">`;
+.solo{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;gap:14px;max-width:34rem;margin:0 auto;padding:40px var(--gutter)}
+.solo h1{font-size:40px;letter-spacing:-.04em}
+.solo p{margin:0;max-width:52ch}
+.solo a:not(.btn){text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-2)}
+.solo .row{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:8px}
+</style></head><body><div class="solo">${body}</div></body></html>`;
 
 function landing(cfg: ReturnType<typeof config>) {
-  return page('zomb', `<h1>zomb</h1><p>A health check on every pull request, trends across your repos, and a weekly clean-up handed to the agent your team already pays for.</p>
-<div class="row"><a class="btn primary" href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">Install on GitHub</a><a href="/login">Sign in</a></div>`);
+  return page('zomb', `<p class="eyebrow">zomb cloud</p><h1>A health check on every pull request.</h1>
+<p>Trends across your repos, and a weekly clean-up handed to the agent your team already pays for.</p>
+<div class="row"><a class="btn" href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">Install on GitHub</a><a href="/login">Sign in</a></div>`);
 }
 
-// ---------- the app shell: dark chrome around a light workspace
-const MARK = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V9a8 8 0 0 1 16 0v11l-2.7-2-2.6 2-2.7-2-2.6 2L4 20Z"/><path d="M9 10.5h.01M15 10.5h.01"/></svg>`;
-const ICON: Record<string, string> = {
-  shield: `<path d="M12 3.5 5 6v5.5c0 4 3 7.3 7 8.5 4-1.2 7-4.5 7-8.5V6l-7-2.5Z"/>`,
-  box: `<path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z"/><path d="M4 8.5 12 13l8-4.5M12 13v7"/>`,
-  layers: `<path d="M12 4 4 8l8 4 8-4-8-4Z"/><path d="m4 13 8 4 8-4"/>`,
-  scissors: `<path d="M7.5 7.5 20 20M20 4 9.5 14.5"/><circle cx="6" cy="18" r="2.3"/><circle cx="6" cy="6" r="2.3"/>`,
-};
-const ico = (name: string) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${ICON[name]}</svg>`;
+const DASH_CSS = `
+.bar{display:flex;align-items:center;gap:16px;padding:14px var(--gutter);border-bottom:1px solid var(--line);background:var(--paper);position:sticky;top:0;z-index:3}
+.bar .word{font:600 19px/1 var(--display);letter-spacing:-.045em;color:var(--ink)}
+.bar .sep{width:1px;height:18px;background:var(--line-2)}
+.bar .who{margin-left:auto;display:flex;align-items:center;gap:14px;font:12.5px/1 var(--mono);color:var(--mute)}
+.bar .who a{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-2)}
 
-const SHELL_CSS = `
-.shell{display:grid;grid-template-columns:256px minmax(0,1fr);height:100%;max-height:100dvh;overflow:hidden}
-.sidebar{background:var(--sidebar);color:oklch(0.97 0.006 118);display:flex;flex-direction:column;gap:22px;padding:18px 16px;overflow:hidden}
-.brand{display:flex;align-items:center;gap:9px}
-.brand span{font:800 20px/1 var(--display);letter-spacing:-.04em}
-.brand small{font:500 10.5px/1 var(--mono);color:oklch(1 0 0/.4);letter-spacing:.06em;align-self:flex-end;padding-bottom:1px}
-.nav{display:flex;flex-direction:column;gap:2px;margin-top:-6px}
-.nav a{display:flex;align-items:center;justify-content:space-between;gap:8px;border-radius:9px;padding:8px 10px;font-size:13.5px;color:oklch(1 0 0/.62);transition:background-color .16s var(--ui-ease),color .16s var(--ui-ease)}
-.nav a:hover{background:oklch(1 0 0/.06);color:oklch(0.98 0.006 118)}
-.nav a.on{background:oklch(1 0 0/.1);color:oklch(0.98 0.006 118);font-weight:600}
-.nav a b{font:500 11.5px/1 var(--mono);color:oklch(1 0 0/.45)}
-.side-foot{margin-top:auto;display:flex;flex-direction:column;gap:10px;font:11.5px/1.5 var(--mono);color:oklch(1 0 0/.4)}
-.side-foot a{color:oklch(1 0 0/.6);text-decoration:underline;text-underline-offset:3px;text-decoration-color:oklch(1 0 0/.2)}
-.container{height:100%;padding:10px;overflow:hidden}
-.app{display:grid;grid-template-rows:auto minmax(0,1fr);height:100%;overflow:hidden;border-radius:16px;background:var(--side);box-shadow:0 1px 0 oklch(1 0 0/.05),0 12px 40px oklch(0 0 0/.35)}
+/* views: text tabs on a rule, the active one marked by ink, not a pill */
+.views{display:flex;gap:26px;padding:0 var(--gutter);border-bottom:1px solid var(--line);overflow-x:auto}
+.views a{position:relative;display:flex;align-items:baseline;gap:7px;padding:13px 0 12px;font-size:13.5px;color:var(--mute);white-space:nowrap;transition:color .15s var(--ease)}
+.views a b{font:500 11.5px/1 var(--mono);color:var(--faint)}
+.views a:hover{color:var(--ink)}
+.views a.on{color:var(--ink);font-weight:600}
+.views a.on b{color:var(--mute)}
+.views a.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--ink)}
 
-.tabbar{display:flex;align-items:flex-end;gap:4px;padding:6px 10px 0 8px;background:var(--side);user-select:none;overflow:hidden}
-.tab{position:relative;display:flex;align-items:center;gap:7px;height:36px;min-width:112px;max-width:240px;flex:0 1 auto;padding:0 13px;border-radius:12px 12px 0 0;font-size:13px;color:oklch(1 0 0/.55);white-space:nowrap;transition:color .16s var(--tab-ease)}
-.tab b{font:500 11.5px/1 var(--mono);color:oklch(1 0 0/.38)}
-.tab:not(.on)::before{content:'';position:absolute;inset:4px 4px 6px;border-radius:8px;background:transparent;transition:background-color .16s var(--tab-ease)}
-.tab:not(.on):hover{color:oklch(0.97 0.006 118)}
-.tab:not(.on):hover::before{background:oklch(1 0 0/.1)}
-.tab.on{background:var(--canvas);color:var(--text);font-weight:600}
-.tab.on b{color:var(--muted)}
-/* the two inverse corners that tie the active tab into the workspace below it */
-.tab.on::before,.tab.on::after{content:'';position:absolute;bottom:0;width:11px;height:11px}
-.tab.on::before{left:-11px;background:radial-gradient(circle at 0 0,transparent 11px,var(--canvas) 11px)}
-.tab.on::after{right:-11px;background:radial-gradient(circle at 100% 0,transparent 11px,var(--canvas) 11px)}
-.chrome-spacer{flex:1 1 auto;min-width:10px}
+/* the section rule, promoted from the terminal: label left, count right */
+.rule{display:flex;align-items:baseline;gap:14px;padding:30px var(--gutter) 0}
+.rule::after{content:"";flex:1 1 auto;height:1px;background:var(--line);transform:translateY(-3px)}
+.rule h2{font-size:14.5px;letter-spacing:-.01em}
+.rule .count{font:500 11.5px/1 var(--mono);color:var(--mute);font-variant-numeric:tabular-nums;white-space:nowrap}
+.note{margin:6px 0 0;padding:0 var(--gutter);font-size:13px;color:var(--mute);max-width:70ch}
 
-.canvas{background:var(--canvas);border-radius:0 0 16px 16px;overflow:hidden;min-height:0}
-.panes{--pane-inset:12px;display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,352px);gap:var(--pane-inset);padding:var(--pane-inset);height:100%;overflow-y:auto}
-.workspace,.side-pane{display:flex;flex-direction:column;gap:12px;min-width:0}
+/* figures: one ruled row, divided by hairlines — no boxes, no shadows */
+.figures{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:18px 0 4px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface)}
+.fig{padding:16px var(--gutter);border-left:1px solid var(--line);display:flex;flex-direction:column;gap:9px;min-width:0}
+.fig:first-child{border-left:0}
+.fig .eyebrow{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fig .v{font:500 38px/1 var(--display);letter-spacing:-.045em;color:var(--ink);font-variant-numeric:tabular-nums}
+.fig .v u{text-decoration:none;font-size:.5em;letter-spacing:-.02em;color:var(--mute);margin-left:1px}
+.fig .foot{display:flex;align-items:center;gap:8px;min-width:0;font-size:12.5px;color:var(--mute)}
+.fig .foot em{font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.delta{flex:none;font:500 11.5px/1 var(--mono);font-variant-numeric:tabular-nums}
+.delta.better{color:var(--good)}.delta.worse{color:var(--high)}.delta.same{color:var(--faint)}
 
-/* concentric hatch shell: hatched frame, 3px pad, inner card */
-.hatch{--shell-pad:3px;--inner-r:14px;display:flex;flex-direction:column;padding:var(--shell-pad);border-radius:calc(var(--inner-r) + var(--shell-pad));
-  background:repeating-linear-gradient(-45deg,oklch(0.78 0.012 118/.35) 0 1px,transparent 1px 5px),var(--shell);
-  box-shadow:0 0 0 1px oklch(0 0 0/.05),0 1px 2px oklch(0 0 0/.03),0 6px 18px oklch(0 0 0/.06)}
-.card{border-radius:var(--inner-r);background:var(--bg);box-shadow:inset 0 0 0 1px oklch(0 0 0/.05),inset 0 1px 2px oklch(0 0 0/.03),0 1px 0 oklch(1 0 0/.8);min-width:0}
-.card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:14px 16px 10px}
-.card-head h2{font-size:16.5px;font-weight:700}
-.card-head p{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
-
-/* bento */
-.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:4px;padding:6px}
-.tile{grid-column:span 3;display:flex;flex-direction:column;gap:12px;min-width:0;padding:14px 10px;border-radius:20px;overflow:hidden;background:var(--canvas)}
-.tile-head{display:flex;align-items:center;gap:8px;min-width:0}
-.tile-well{display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:999px;background:var(--bg);color:var(--muted);box-shadow:inset 0 0 0 1px oklch(0 0 0/.05)}
-.tile-head span{font-size:13.5px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tile-value{margin:0;font:700 28px/1 var(--ui);letter-spacing:-.04em;font-variant-numeric:tabular-nums;text-wrap:balance}
-.tile-value small{font-size:.62em;font-weight:600;letter-spacing:-.02em;color:var(--muted)}
-.tile-foot{display:flex;align-items:center;gap:8px;min-width:0;font-size:12.5px;color:var(--muted)}
-.pill{display:inline-flex;align-items:center;gap:3px;flex:none;border-radius:999px;padding:2px 7px;font:600 11.5px/1.3 var(--mono);font-variant-numeric:tabular-nums}
-.pill.up{background:var(--accent-soft);color:var(--accent-ink)}
-.pill.down{background:var(--bad-soft);color:var(--bad-ink)}
-.pill.flat{background:var(--hover);color:var(--muted)}
-.tile-foot em{font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-/* table */
-.table-wrap{overflow:auto;max-height:min(58vh,520px);border-radius:0 0 var(--inner-r) var(--inner-r)}
+/* table: hairline rows, numbers right, nothing else */
+.scroll{overflow:auto;max-height:min(62vh,560px);border-top:1px solid var(--line);margin-top:18px}
 table{width:100%;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums}
-thead th{position:sticky;top:0;z-index:1;background:var(--bg);font:600 11px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:right;padding:10px 12px;box-shadow:inset 0 -1px 0 var(--line)}
-thead th:first-child{text-align:left}
-tbody td{padding:12px;border-bottom:1px solid var(--line);text-align:right;font-size:13.5px;height:58px}
-tbody tr:nth-child(odd) td{background:oklch(0.968 0.005 118/.55)}
-tbody tr:last-child td{border-bottom:0}
-tbody td:first-child{text-align:left;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.repo{font-weight:600;color:var(--text)}
+thead th{position:sticky;top:0;z-index:2;background:var(--surface);text-align:right;padding:9px var(--gutter) 9px 14px;font:500 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--mute);box-shadow:inset 0 -1px 0 var(--line);white-space:nowrap}
+thead th:first-child{text-align:left;padding-left:var(--gutter)}
+thead th:last-child{padding-right:var(--gutter)}
+tbody td{padding:13px var(--gutter) 13px 14px;border-bottom:1px solid var(--line);text-align:right;font-size:14px;color:var(--ink)}
+tbody td:first-child{text-align:left;padding-left:var(--gutter);max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+tbody td:last-child{padding-right:var(--gutter)}
+tbody tr:hover td{background:var(--surface)}
+.repo{font-weight:600;color:var(--ink)}
 .repo:hover{text-decoration:underline;text-underline-offset:3px}
 .when{display:block;font:11.5px/1.5 var(--mono);color:var(--faint)}
-td b{font-weight:600}
-td b.bad{color:var(--bad-ink)}
-td b.zero{color:var(--faint);font-weight:500}
-.trend{display:inline-block;margin-left:10px;vertical-align:middle}
+td .zero{color:var(--faint)}
+td .hit{color:var(--high);font-weight:600}
+.trend{display:inline-block;margin-left:9px;vertical-align:middle}
+.act{display:flex;justify-content:flex-end}
 
-/* side pane */
-.rows{display:flex;flex-direction:column;list-style:none;margin:0;padding:0}
-.rows li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);min-width:0}
-.rows li:last-child{border-bottom:0}
-.rows div{min-width:0}
-.rows strong{display:block;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rows span{font:11.5px/1.5 var(--mono);color:var(--faint)}
-.bars{display:flex;flex-direction:column;gap:9px;padding:6px 14px 14px}
-.bars div{display:grid;grid-template-columns:4.6rem 1fr 2rem;align-items:center;gap:9px;font-size:12.5px}
-.bars i{height:7px;border-radius:3.5px;background:var(--line-strong);display:block}
-.bars .you i{background:var(--accent)}
-.bars .you{font-weight:600}
-.bars b{text-align:right;font-variant-numeric:tabular-nums;font-weight:500}
-.empty{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:34px 24px 36px}
-.empty h2{font-size:19px;font-weight:700}
-.empty p{margin:0;max-width:40ch;color:var(--muted);font-size:13.5px}
-@media (max-width:1080px){.shell{grid-template-columns:minmax(0,1fr)}.sidebar{display:none}.panes{grid-template-columns:minmax(0,1fr)}.tile{grid-column:span 6}}
+/* the study strip: bars drawn on the rule, your repos in ink */
+.bars{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:18px}
+.bars div{padding:14px var(--gutter);border-left:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.bars div:first-child{border-left:0}
+.bars span{font:500 11.5px/1 var(--mono);color:var(--mute);text-transform:lowercase}
+.bars b{font:500 22px/1 var(--display);letter-spacing:-.04em;color:var(--ink);font-variant-numeric:tabular-nums}
+.bars i{display:block;height:3px;background:var(--line-2)}
+.bars .you span,.bars .you b{color:var(--ink)}
+.bars .you span{font-weight:600}
+.bars .you i{background:var(--ink)}
+
+.empty{padding:44px var(--gutter) 52px;display:flex;flex-direction:column;align-items:flex-start;gap:12px;border-top:1px solid var(--line);margin-top:18px}
+.empty h3{font-size:19px}
+.empty p{margin:0;max-width:46ch;color:var(--mute);font-size:14px}
+footer{padding:28px var(--gutter) 40px;font:12.5px/1.6 var(--mono);color:var(--faint);display:flex;flex-wrap:wrap;gap:6px 20px}
+footer a{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-2)}
+@media (max-width:860px){.figures{grid-template-columns:repeat(2,minmax(0,1fr))}.fig:nth-child(3){border-left:0}.fig:nth-child(n+3){border-top:1px solid var(--line)}}
+@media (max-width:560px){.figures{grid-template-columns:minmax(0,1fr)}.fig{border-left:0}.fig+.fig{border-top:1px solid var(--line)}}
 `;
 
 const VIEWS: [string, string, (s: any) => boolean][] = [
   ['all', 'All repos', () => true],
-  ['attention', 'Needs attention', (s) => Boolean(s && (s.security.high || s.blueprint)) ],
+  ['attention', 'Needs attention', (s) => Boolean(s && (s.security.high || s.blueprint))],
   ['clean', 'Clean', (s) => Boolean(s && !s.security.high && !s.blueprint)],
 ];
 
-// A 12-point trend line. Higher is worse for everything shown here, so a rising line is red.
+// A 12-point trend. Higher is worse for everything shown, so a rising line is the alarm colour.
 function spark(values: number[]) {
   if (values.length < 2 || !values.some(Boolean)) return '';
   const max = Math.max(...values, 1);
-  const pts = values.map((v, i) => `${(i / (values.length - 1)) * 54 + 1},${15 - (v / max) * 12}`).join(' ');
+  const pts = values.map((v, i) => `${(i / (values.length - 1)) * 52 + 1},${13 - (v / max) * 11}`).join(' ');
   const [first, last] = [values[0], values.at(-1)!];
-  const tone = last > first ? 'var(--bad)' : last < first ? 'var(--accent)' : 'var(--line-strong)';
-  return `<svg class="trend" width="56" height="16" viewBox="0 0 56 16" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${tone}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const tone = last > first ? 'var(--high)' : last < first ? 'var(--good)' : 'var(--line-2)';
+  return `<svg class="trend" width="54" height="14" viewBox="0 0 54 14" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${tone}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
 function dashboard(db: any, me: Session, cfg: ReturnType<typeof config>, view = 'all') {
@@ -340,106 +322,87 @@ function dashboard(db: any, me: Session, cfg: ReturnType<typeof config>, view = 
     return { ...r, scans, last: scans.at(-1)?.summary, prev: scans.at(-2)?.summary, at: scans.at(-1)?.at };
   });
   const scanned = repos.filter((r) => r.last);
+  const withPrev = scanned.filter((r) => r.prev);
   const counts = Object.fromEntries(VIEWS.map(([key, , match]) => [key, repos.filter((r) => match(r.last)).length]));
-  const shown = (VIEWS.find(([k]) => k === view) || VIEWS[0])[2];
+  const [, viewLabel, shown] = VIEWS.find(([k]) => k === view) || VIEWS[0];
 
-  // ---- bento: shares where there is a denominator, counts where a share would be invented
   const sum = (list: any[], pick: (s: any) => number) => list.reduce((n, r) => n + (pick(r) || 0), 0);
   // a share can never exceed its denominator, whatever a scan reports
   const share = (n: number, d: number) => (d ? Math.min(100, Math.round((n / d) * 100)) : 0);
   const median = (xs: number[]) => (xs.length ? xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)] : null);
-  const highNow = sum(scanned, (r) => r.last.security.high);
-  const highWas = sum(scanned.filter((r) => r.prev), (r) => r.prev.security.high);
-  const cleanNow = share(scanned.filter((r) => !r.last.security.high).length, scanned.length);
-  const withPrev = scanned.filter((r) => r.prev);
+  const cleanRepos = scanned.filter((r) => !r.last.security.high).length;
+  const cleanNow = share(cleanRepos, scanned.length);
   const cleanWas = share(withPrev.filter((r) => !r.prev.security.high).length, withPrev.length);
+  const highNow = sum(scanned, (r) => r.last.security.high);
+  const highWas = sum(withPrev, (r) => r.prev.security.high);
   const deadNow = share(sum(scanned, (r) => r.last.zombie.lines), sum(scanned, (r) => r.last.lines));
   const deadWas = share(sum(withPrev, (r) => r.prev.zombie.lines), sum(withPrev, (r) => r.prev.lines));
   const deletes = median(scanned.map((r) => r.last.deletedPer100).filter((x: number | null) => x !== null));
   const humans = Math.round(study.authors.Human.deletedPer100);
 
-  // a pill only appears once there is an earlier scan to compare with
-  const pill = (now: number, was: number, higherIsBetter: boolean, unit = '') => {
+  // a delta only appears once there is an earlier scan to compare with
+  const delta = (now: number, was: number, higherIsBetter: boolean, unit = '') => {
     if (!withPrev.length) return '';
     const d = now - was;
-    if (!d) return `<span class="pill flat">no change</span>`;
+    if (!d) return `<span class="delta same">no change</span>`;
     const good = higherIsBetter ? d > 0 : d < 0;
-    return `<span class="pill ${good ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'}${num(Math.abs(d))}${unit}</span>`;
+    return `<span class="delta ${good ? 'better' : 'worse'}">${d > 0 ? '+' : '−'}${num(Math.abs(d))}${unit}</span>`;
   };
-  const tile = (icon: string, label: string, value: string, foot: string) =>
-    `<div class="tile"><div class="tile-head"><span class="tile-well">${ico(icon)}</span><span>${esc(label)}</span></div>
-      <p class="tile-value">${value}</p><div class="tile-foot">${foot}</div></div>`;
-  const bento = scanned.length
-    ? `<section class="hatch"><div class="card"><div class="bento">
-${tile('shield', 'Repos clean', `${cleanNow}<small>%</small>`, `${pill(cleanNow, cleanWas, true, 'pts')}<em>${scanned.filter((r) => !r.last.security.high).length} of ${scanned.length} with no high findings</em>`)}
-${tile('scissors', 'High security', num(highNow), `${pill(highNow, highWas, false)}<em>in ${num(scanned.filter((r) => r.last.security.high).length)} repos</em>`)}
-${tile('box', 'Dead code', `${deadNow}<small>%</small>`, `${pill(deadNow, deadWas, false, 'pts')}<em>of ${num(sum(scanned, (r) => r.last.lines))} lines scanned</em>`)}
-${tile('layers', 'Deleted per 100 added', deletes === null ? '–' : num(deletes), `<em>${deletes === null ? 'needs a year of history' : `humans in the study delete ${humans}`}</em>`)}
-      </div></div></section>`
+  const fig = (label: string, value: string, foot: string) =>
+    `<div class="fig"><p class="eyebrow">${esc(label)}</p><p class="v">${value}</p><div class="foot">${foot}</div></div>`;
+
+  const figures = scanned.length
+    ? `<div class="figures">
+${fig('Repos clean', `${cleanNow}<u>%</u>`, `${delta(cleanNow, cleanWas, true, 'pts')}<em>${num(cleanRepos)} of ${num(scanned.length)} with no high findings</em>`)}
+${fig('High security', num(highNow), `${delta(highNow, highWas, false)}<em>across ${num(scanned.filter((r) => r.last.security.high).length)} repos</em>`)}
+${fig('Dead code', `${deadNow}<u>%</u>`, `${delta(deadNow, deadWas, false, 'pts')}<em>of ${num(sum(scanned, (r) => r.last.lines))} lines</em>`)}
+${fig('Deleted per 100 added', deletes === null ? '—' : num(deletes), `<em>${deletes === null ? 'needs a year of history' : `humans in the study delete ${humans}`}</em>`)}
+</div>`
     : '';
 
-  // ---- table, built for 100 rows: sticky head, long names truncate, numbers never do
+  // table built for 100 rows: sticky head, long names truncate with a tooltip, numbers never do
   const figure = (r: any, pick: (s: any) => number, trend = true) => {
-    if (!r.last) return '<td class="faint">–</td>';
+    if (!r.last) return '<td><span class="zero">—</span></td>';
     const v = pick(r.last) || 0;
-    return `<td><b class="${v ? 'bad' : 'zero'}">${num(v)}</b>${trend ? spark(r.scans.map((s: any) => pick(s.summary) || 0)) : ''}</td>`;
+    return `<td><span class="${v ? 'hit' : 'zero'}">${num(v)}</span>${trend ? spark(r.scans.map((s: any) => pick(s.summary) || 0)) : ''}</td>`;
   };
   const list = repos.filter((r) => shown(r.last));
   const rows = list
     .map(
       (r) => `<tr><td title="${esc(r.name)}"><a class="repo" href="${esc(cfg.web)}/${esc(r.name)}">${esc(r.name)}</a>
-<span class="when">${r.at ? `scanned ${esc(String(r.at).slice(0, 10))}` : 'waiting for the first push'}</span></td>
-${figure(r, (s) => s.security.high)}${figure(r, (s) => s.zombie.lines)}${figure(r, (s) => s.zombie.packages, false)}${figure(r, (s) => s.architecture.cycles + s.architecture.bigFiles, false)}${figure(r, (s) => s.blueprint || 0, false)}</tr>`,
+<span class="when">${r.at ? `scanned ${esc(String(r.at).slice(0, 10))}` : 'waiting for the first push'}${r.weekly_at ? ` · cleaned ${esc(String(r.weekly_at).slice(0, 10))}` : ''}</span></td>
+${figure(r, (s) => s.security.high)}${figure(r, (s) => s.zombie.lines)}${figure(r, (s) => s.zombie.packages, false)}${figure(r, (s) => s.architecture.cycles + s.architecture.bigFiles, false)}${figure(r, (s) => s.blueprint || 0, false)}
+<td><div class="act"><form method="post" action="/repos/${r.id}/copilot"><button class="btn quiet">Hand to Copilot</button></form></div></td></tr>`,
     )
     .join('');
-  const table = repos.length
-    ? `<section class="hatch"><div class="card">
-<div class="card-head"><div><h2>${esc((VIEWS.find(([k]) => k === view) || VIEWS[0])[1])}</h2><p>${num(list.length)} of ${num(repos.length)} repos. Figures are from the last scan of the default branch.</p></div></div>
-${list.length ? `<div class="table-wrap"><table><thead><tr><th>Repo</th><th>High</th><th>Zombie lines</th><th>Packages</th><th>Architecture</th><th>Blueprint</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty"><h2>Nothing here</h2><p>No repo matches this view right now.</p><a class="btn ghost" href="/">Show all repos</a></div>`}
-</div></section>`
-    : `<section class="hatch"><div class="card"><div class="empty"><h2>No repos yet</h2>
-<p>Install the app on a repository, then push to its default branch. The first scan lands within a minute and the trends build from there.</p>
-<a class="btn primary" href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">Install on a repo</a></div></div></section>`;
 
-  // ---- side pane: the weekly clean-up, and where these repos sit against the study
-  const weekly = repos.length
-    ? `<section class="hatch"><div class="card"><div class="card-head"><div><h2>Weekly clean-up</h2><p>One issue per repo, handed to your agent.</p></div></div>
-<ul class="rows">${repos
-        .slice(0, 8)
-        .map(
-          (r) => `<li><div><strong title="${esc(r.name)}">${esc(r.name.split('/')[1] || r.name)}</strong>
-<span>${r.weekly_at ? `ran ${esc(String(r.weekly_at).slice(0, 10))}` : 'runs within the week'}</span></div>
-<form method="post" action="/repos/${r.id}/copilot"><button class="btn ghost">Hand to Copilot</button></form></li>`,
-        )
-        .join('')}</ul></div></section>`
-    : '';
-  const bars = [{ name: 'your repos', v: deletes, you: true }, ...Object.entries(study.authors).map(([name, a]) => ({ name: name === 'Human' ? 'humans' : name.toLowerCase(), v: Math.round(a.deletedPer100), you: false }))]
+  const table = !repos.length
+    ? `<div class="empty"><h3>No repos yet</h3><p>Install the app on a repository, then push to its default branch. The first scan lands within a minute and the trends build from there.</p>
+<a class="btn" href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">Install on a repo</a></div>`
+    : !list.length
+      ? `<div class="empty"><h3>Nothing in this view</h3><p>No repo matches ${esc(viewLabel.toLowerCase())} right now.</p><a class="btn quiet" href="/">Show all repos</a></div>`
+      : `<div class="scroll"><table><thead><tr><th>Repo</th><th>High</th><th>Zombie lines</th><th>Packages</th><th>Architecture</th><th>Blueprint</th><th>Weekly clean-up</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+
+  const bars = [{ name: 'your repos', v: deletes, you: true }, ...Object.entries(study.authors).map(([name, a]) => ({ name: name === 'Human' ? 'humans' : name, v: Math.round(a.deletedPer100), you: false }))]
     .filter((b) => b.v !== null)
     .sort((a, b) => (b.v as number) - (a.v as number));
   const max = Math.max(...bars.map((b) => b.v as number), 1);
-  const studyShell = `<section class="hatch"><div class="card"><div class="card-head"><div><h2>Deleted per 100 added</h2><p>Against ${num(study.study.repos)} public repos measured the same way.</p></div></div>
-<div class="bars">${bars.map((b) => `<div class="${b.you ? 'you' : ''}"><span>${esc(b.name)}</span><i style="width:${Math.round(((b.v as number) / max) * 100)}%"></i><b>${b.v}</b></div>`).join('')}</div></div></section>`;
+  const strip = scanned.length
+    ? `<div class="rule"><h2>Deleted per 100 added</h2><span class="count">${num(study.study.repos)} public repos</span></div>
+<p class="note">Lines deleted for every 100 added since October 2025, measured the same way in your repos and in the study.</p>
+<div class="bars">${bars.map((b) => `<div class="${b.you ? 'you' : ''}"><span>${esc(b.name)}</span><b>${b.v}</b><i style="width:${Math.round(((b.v as number) / max) * 100)}%"></i></div>`).join('')}</div>`
+    : '';
 
-  const tabs = VIEWS.map(([key, label]) => `<a class="tab${key === view ? ' on' : ''}" href="${key === 'all' ? '/' : `/?view=${key}`}">${esc(label)} <b>${num(counts[key])}</b></a>`).join('');
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Repos · zomb</title>${FONTS}<style>${TOKENS}${SHELL_CSS}</style></head><body>
-<div class="shell">
-  <aside class="sidebar">
-    <div class="brand">${MARK}<span>zomb</span><small>CLOUD</small></div>
-    <nav class="nav">
-      <a class="on" href="/">Repos <b>${num(repos.length)}</b></a>
-      <a href="/?view=attention">Needs attention <b>${num(counts.attention)}</b></a>
-    </nav>
-    <a class="btn primary" href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">Add repos</a>
-    <div class="side-foot"><span>${esc(me.login)} · <a href="/logout">sign out</a></span><span><a href="${esc(study.study.url)}">the study</a></span></div>
-  </aside>
-  <div class="container"><div class="app">
-    <div class="tabbar">${tabs}<span class="chrome-spacer"></span></div>
-    <div class="canvas"><div class="panes">
-      <main class="workspace">${bento}${table}</main>
-      <aside class="side-pane">${weekly}${studyShell}</aside>
-    </div></div>
-  </div></div>
-</div></body></html>`;
+  const views = VIEWS.map(([key, label]) => `<a class="${key === view ? 'on' : ''}" href="${key === 'all' ? '/' : `/?view=${key}`}">${esc(label)} <b>${num(counts[key])}</b></a>`).join('');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Repos · zomb</title>${FONTS}<style>${TOKENS}${DASH_CSS}</style></head><body>
+<div class="bar"><span class="word">zomb</span><span class="sep"></span><span class="eyebrow">cloud</span>
+<span class="who"><span>${esc(me.login)}</span><a href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">add repos</a><a href="/logout">sign out</a></span></div>
+<nav class="views">${views}</nav>
+<div class="rule"><h2>${esc(viewLabel)}</h2><span class="count">${num(list.length)} of ${num(repos.length)}</span></div>
+<p class="note">Figures come from the last scan of each default branch.</p>
+${figures}${table}${strip}
+<footer><span>zomb cloud</span><a href="${esc(study.study.url)}">the study</a><a href="https://github.com/Open-Dev-Society/zomb">docs</a></footer>
+</body></html>`;
 }
 
 // Create the GitHub App from a manifest: one click on GitHub, and the credentials come back here.
