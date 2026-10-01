@@ -39,7 +39,8 @@
       "src/bin.ts",
       "cloud/server.js",
       "research/*.js",
-      "test/*.test.js"
+      "test/*.test.js",
+      "research/page.ts"
     ]
   },
   "devDependencies": {

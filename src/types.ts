@@ -1,7 +1,6 @@
 // The shapes that travel between the scanner, the report, Guard and the cloud. Everything else is inferred.
 
 export type Severity = 'high' | 'medium' | 'low';
-export type Area = 'security' | 'shortcuts' | 'blueprint' | 'zombie' | 'sprawl' | 'architecture';
 
 /** What one file's source told us, from signals.parseAll. */
 export type Parsed = {
@@ -24,7 +23,7 @@ export type RouteFacts = { mutates: boolean; authSignal: boolean; public: boolea
 export type Secret = { file: string; kind: string; line: number; preview: string };
 export type EnvFile = { file: string; values: number; committed: boolean };
 export type PublicVar = { name: string; files: string[] };
-export type Advisory = { name: string; severity: string; direct: boolean; title: string; fix: boolean };
+type Advisory = { name: string; severity: string; direct: boolean; title: string; fix: boolean };
 export type Audit = { counts?: Record<string, number>; top?: Advisory[]; skipped?: string };
 
 /** One security problem, ready to show. `files` is what diff mode filters on. */
@@ -46,7 +45,6 @@ export type Shortcut = { severity: Severity; kind: string; file: string; line?: 
 export type Month = { month: string; added: number; deleted: number };
 export type Version = { path: string; original: string | null; files?: number };
 export type Overlap = { job: string; libraries: { name: string; files: number }[] };
-export type Folder = { folder: string; total: number; zombie: number; 'zombie-known': number; unread: number; healthy: number };
 
 /** Everything one scan found. The HTML report, the terminal and --json all read this. */
 export type ScanData = {
@@ -68,7 +66,7 @@ export type ScanData = {
 };
 
 /** One thing to fix, for an agent, CI or a person. `safe` means a build can prove it. */
-export type Task = { id: number; area: Area; severity: Severity; action: string; title: string; where: string; how: string; safe: boolean; key?: string; new?: boolean };
+export type Task = { id: number; area: 'security' | 'shortcuts' | 'blueprint' | 'zombie' | 'sprawl' | 'architecture'; severity: Severity; action: string; title: string; where: string; how: string; safe: boolean; key?: string; new?: boolean };
 
 /** Blueprint: the rules a codebase already follows. */
 export type Rule = { section: string; key: string; value: string | number; evidence: string };
