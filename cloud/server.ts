@@ -276,7 +276,7 @@ main{padding-bottom:72px}
 .fig .n{font-size:2rem;font-weight:500;letter-spacing:-.038em;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}
 .fig .n u{text-decoration:none;font-size:.5em;color:var(--mute);margin-left:2px}
 .fig .k{margin-top:11px;font:500 9.5px/1.5 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--mute)}
-.fig .f{margin-top:7px;font-size:12.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fig .f{margin-top:7px;font-size:12.5px;color:var(--mute);line-height:1.45}
 .delta{font-variant-numeric:tabular-nums;font-weight:500}
 .delta.better{color:var(--accent-ink)}.delta.worse{color:var(--high)}.delta.same{color:var(--line-2)}
 @media(max-width:900px){.figs{grid-template-columns:1fr 1fr}.fig:nth-child(3){border-left:0}.fig:nth-child(n+3){border-top:1px solid var(--line)}}
@@ -290,12 +290,13 @@ thead th{position:sticky;top:0;z-index:2;background:var(--sunk);text-align:right
   font:500 9.5px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--mute);
   box-shadow:inset 0 -1px 0 var(--line);white-space:nowrap}
 thead th.gut{width:28px;padding:0}
-thead th.nm{text-align:left;padding-left:22px}
+thead th.nm{text-align:left;padding-left:22px;width:32%}
+thead th.act{width:10rem}
 thead th:last-child{padding-right:22px}
-tbody td{padding:14px 16px;border-bottom:1px solid var(--line);text-align:right;font-size:14px;color:var(--ink)}
+tbody td{padding:14px 16px;border-bottom:1px solid var(--line);text-align:right;font-size:14px;color:var(--ink);white-space:nowrap}
 tbody td.gut{width:28px;padding:0 0 0 12px}
 tbody td.gut span{display:block;width:4px;height:26px;border-radius:2px}
-tbody td.nm{text-align:left;padding-left:10px;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+tbody td.nm{text-align:left;padding-left:10px;max-width:0;overflow:hidden;text-overflow:ellipsis}
 tbody td:last-child{padding-right:22px}
 tbody tr:last-child td{border-bottom:0}
 tbody tr:hover td{background:var(--paper)}
@@ -304,6 +305,10 @@ tbody tr:hover td{background:var(--paper)}
 .when{display:block;font:11px/1.5 var(--mono);color:var(--mute)}
 td .zero{color:var(--line-2)}
 td .hit{color:var(--high);font-weight:600}
+td .warn{color:var(--warn);font-weight:600}
+/* one quiet action per row: 24 bordered buttons shout louder than the data */
+.handoff{background:none;border:0;padding:0;font:500 13px/1 var(--sans);color:var(--mute);cursor:pointer;white-space:nowrap;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-2);transition:color .15s var(--ease)}
+.handoff:hover{color:var(--ink);text-decoration-color:currentColor}
 .trend{display:inline-block;margin-left:9px;vertical-align:middle}
 .act{display:flex;justify-content:flex-end}
 
@@ -401,10 +406,11 @@ ${fig(deletes === null ? '—' : num(deletes), 'Deleted per 100 added', deletes 
     : '';
 
   // built for 100 rows: sticky head, long names truncate with a tooltip, numbers never do
-  const cell = (r: any, pick: (s: any) => number, trend = true) => {
+  // colour is severity: only a high finding earns the alarm, the rest are plain figures
+  const cell = (r: any, pick: (s: any) => number, { trend = false, tone = '' } = {}) => {
     if (!r.last) return '<td><span class="zero">—</span></td>';
     const v = pick(r.last) || 0;
-    return `<td><span class="${v ? 'hit' : 'zero'}">${num(v)}</span>${trend ? spark(r.scans.map((s: any) => pick(s.summary) || 0)) : ''}</td>`;
+    return `<td><span class="${v ? tone : 'zero'}">${num(v)}</span>${trend ? spark(r.scans.map((s: any) => pick(s.summary) || 0)) : ''}</td>`;
   };
   const list = repos.filter((r) => shown(r.last));
   const rows = list
@@ -414,8 +420,8 @@ ${fig(deletes === null ? '—' : num(deletes), 'Deleted per 100 added', deletes 
       return `<tr><td class="gut"><span style="background:${tick}"></span></td>
 <td class="nm" title="${esc(r.name)}"><a class="repo" href="${esc(cfg.web)}/${esc(r.name)}">${esc(r.name)}</a>
 <span class="when">${r.at ? `scanned ${esc(String(r.at).slice(0, 10))}` : 'waiting for the first push'}${r.weekly_at ? ` · cleaned ${esc(String(r.weekly_at).slice(0, 10))}` : ''}</span></td>
-${cell(r, (s) => s.security.high)}${cell(r, (s) => s.zombie.lines)}${cell(r, (s) => s.zombie.packages, false)}${cell(r, (s) => s.architecture.cycles + s.architecture.bigFiles, false)}${cell(r, (s) => s.blueprint || 0, false)}
-<td><div class="act"><form method="post" action="/repos/${r.id}/copilot"><button class="btn btn-g">Hand to Copilot</button></form></div></td></tr>`;
+${cell(r, (s) => s.security.high, { trend: true, tone: 'hit' })}${cell(r, (s) => s.zombie.lines, { trend: true })}${cell(r, (s) => s.zombie.packages)}${cell(r, (s) => s.architecture.cycles + s.architecture.bigFiles)}${cell(r, (s) => s.blueprint || 0, { tone: 'warn' })}
+<td><div class="act"><form method="post" action="/repos/${r.id}/copilot"><button class="handoff">Hand to Copilot</button></form></div></td></tr>`;
     })
     .join('');
 
@@ -424,7 +430,7 @@ ${cell(r, (s) => s.security.high)}${cell(r, (s) => s.zombie.lines)}${cell(r, (s)
 <a class="btn btn-p" href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">Install on a repo</a></div></div>`
     : !list.length
       ? `<div class="fleet"><div class="empty"><h3>Nothing in this view</h3><p>No repo is ${esc(viewLabel.toLowerCase())} right now.</p><a class="btn btn-g" href="/">Show all repos</a></div></div>`
-      : `<div class="fleet"><div class="scroll"><table><thead><tr><th class="gut"></th><th class="nm">Repo</th><th>High</th><th>Zombie lines</th><th>Packages</th><th>Architecture</th><th>Blueprint</th><th>Weekly clean-up</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      : `<div class="fleet"><div class="scroll"><table><thead><tr><th class="gut"></th><th class="nm">Repo</th><th>High</th><th>Zombie lines</th><th>Packages</th><th>Architecture</th><th>Blueprint</th><th class="act">Weekly clean-up</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 
   const views = VIEWS.map(([key, label]) => `<a class="${key === view ? 'on' : ''}" href="${key === 'all' ? '/' : `/?view=${key}`}">${esc(label)} <b>${num(counts[key])}</b></a>`).join('');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Repos · zomb</title>${FONTS}<style>${TOKENS}${DASH_CSS}</style></head><body>
