@@ -8,104 +8,213 @@
 <meta property="og:title" content="zomb">
 <meta property="og:description" content="Your agent writes code fast. zomb checks what it left behind.">
 <meta property="og:type" content="website">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='14'>🧟</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='5' fill='%230f8f55'/><rect x='6' y='6' width='5' height='5' fill='%23fff'/><rect x='13' y='6' width='5' height='5' fill='%23fff'/><rect x='6' y='13' width='12' height='5' fill='%23fff'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
+/* ============================================================================
+   zomb — built on the house system Onto uses: paper ground, one saturated
+   accent used structurally, hairline panels at 14px with registration marks,
+   mono chapter headers that state their position, and a single surface with
+   ruled rows instead of a grid of cards.
+
+   The accent is zomb's own. Onto spends its orange on the brand; zomb spends a
+   signal green, because "clean" is the state the product is arguing for, and
+   red and amber have to stay free to mean severity and nothing else.
+   ========================================================================== */
 :root{
-  --paper:#f4f5f1;--ink:#16191b;--muted:#5b6266;--rule:#d9dcd5;--panel:#ebede7;--panel-edge:#dfe2db;
-  --high:#c0402a;--warn:#9a6b00;--good:#1d7a4f;--accent:#16191b;
-  --display:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;
-  --body:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
-  --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  --paper:#F4F4F2; --surface:#FFF; --sunk:#EEEEE9;
+  --line:#E4E4DE; --line-2:#CBCBC3;
+  --ink:#111110; --body:#55554F; --mute:#6C6C66;
+  --accent:#0F8F55; --accent-fill:#0C7A48; --accent-ink:#0A6B3F; --accent-sub:#E4F3EA;
+  --night:#131311; --night-2:#1C1C19; --night-line:#302F2B; --night-ink:#F3F3ED; --night-mute:#8B8B81;
+  --high:#C3223D; --high-sub:#FBE7EA; --warn:#9A6400; --warn-sub:#FFF8E8;
+  --sans:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r-sm:10px; --r:14px; --r-lg:22px;
+  --pad:clamp(18px,4vw,52px);
+  --lift-sm:0 1px 2px rgba(17,17,16,.05),0 2px 8px rgba(17,17,16,.04);
+  --lift:0 2px 4px rgba(17,17,16,.04),0 12px 32px -8px rgba(17,17,16,.14);
+  --ease:cubic-bezier(.4,0,.2,1);
 }
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --paper:#121416;--ink:#e9ebe6;--muted:#9aa19c;--rule:#2b2f31;--panel:#1a1d1f;--panel-edge:#272b2d;
-  --high:#ff6b55;--warn:#e0b43f;--good:#5cc185;--accent:#e9ebe6;color-scheme:dark;
-}}
-:root[data-theme="dark"]{--paper:#121416;--ink:#e9ebe6;--muted:#9aa19c;--rule:#2b2f31;--panel:#1a1d1f;--panel-edge:#272b2d;--high:#ff6b55;--warn:#e0b43f;--good:#5cc185;--accent:#e9ebe6;color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--body);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:clip;position:relative;display:flow-root}
+h1,h2,h3{margin:0;color:var(--ink);font-weight:500;letter-spacing:-.03em;line-height:1.05;text-wrap:balance}
+h1{font-size:clamp(2.5rem,6.4vw,4.6rem);letter-spacing:-.04em}
+h2{font-size:clamp(1.75rem,3.6vw,2.5rem)}
+h3{font-size:1.0625rem;font-weight:600;letter-spacing:-.015em;line-height:1.3}
+p{margin:0;text-wrap:pretty}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1180px;margin:0 auto;padding:0 var(--pad)}
+.eyebrow{font:500 10.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
+.num{font-variant-numeric:tabular-nums}
 
-*{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 var(--body);-webkit-font-smoothing:antialiased}
-main{max-width:50rem;margin:0 auto;padding:0 16px 7rem;display:flex;flex-direction:column;gap:5.5rem}
-h1,h2{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:-.025em}
-h1{font-size:clamp(3rem,11vw,5.5rem);font-weight:800;line-height:.92}
-h2{font-size:clamp(1.5rem,4.6vw,2.1rem);font-weight:800;line-height:1.08}
-p{margin:0;max-width:62ch}
-a{color:inherit;text-decoration-color:var(--rule);text-underline-offset:3px}
-a:hover{text-decoration-color:currentColor}
-section{display:flex;flex-direction:column;gap:1rem}
-.label{font:500 11.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
-.lede{font-size:1.2rem;line-height:1.45}
+/* the lattice: a faint grid at the top of the page, cleared behind the headline */
+.lattice{position:absolute;top:0;left:0;right:0;height:620px;z-index:0;pointer-events:none;
+  background-image:radial-gradient(circle,rgba(17,17,16,.16) 1px,transparent 1px);
+  background-size:26px 26px;
+  -webkit-mask-image:radial-gradient(56% 44% at 50% 30%,transparent 44%,#000 86%),linear-gradient(180deg,#000 48%,transparent 92%);
+  mask-image:radial-gradient(56% 44% at 50% 30%,transparent 44%,#000 86%),linear-gradient(180deg,#000 48%,transparent 92%);
+  -webkit-mask-composite:source-in;mask-composite:intersect}
 
-/* hero */
-header{padding-top:5rem;display:flex;flex-direction:column;gap:1.5rem}
-.wordmark{display:flex;align-items:baseline;gap:.75rem;flex-wrap:wrap}
-.wordmark .label{position:relative;top:-.15em}
-.cmd{font:500 1.05rem/1 var(--mono);background:var(--panel);border:1px solid var(--panel-edge);border-radius:10px;padding:1rem 1.1rem;display:flex;align-items:center;gap:.7rem;overflow-x:auto;white-space:nowrap;align-self:flex-start;max-width:100%}
-.cmd b{color:var(--muted);font-weight:400;user-select:none}
-.meta{display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;font:12.5px/1.5 var(--mono);color:var(--muted)}
+/* ---------- floating pill nav ---------- */
+.nav{position:sticky;top:14px;z-index:90;padding:0 var(--pad);margin-top:26px}
+.nav-in{max-width:1180px;margin:0 auto;height:58px;display:flex;align-items:center;justify-content:space-between;gap:18px;
+  padding:0 10px 0 18px;background:rgba(255,255,255,.78);backdrop-filter:saturate(150%) blur(10px);-webkit-backdrop-filter:saturate(150%) blur(10px);
+  border:1px solid var(--line);border-radius:999px;box-shadow:var(--lift-sm)}
+.logo{display:flex;align-items:center;gap:10px;color:var(--ink)}
+.logo-mark{width:22px;height:22px;flex:none;color:var(--accent)}
+.logo-word{font-size:21px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;line-height:1}
+.nav-links{display:flex;gap:20px;font-size:14px}
+.nav-links a{color:var(--body)}
+.nav-links a:hover{color:var(--ink)}
+@media(max-width:860px){.nav-links{display:none}}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;font:600 14px/1 var(--sans);
+  padding:12px 20px;min-height:44px;border:1px solid transparent;cursor:pointer;
+  transition:transform .15s var(--ease),box-shadow .15s var(--ease),background-color .15s var(--ease),border-color .15s var(--ease)}
+.btn-p{background:var(--accent-fill);color:#fff;box-shadow:0 2px 10px rgba(15,143,85,.26)}
+.btn-p:hover{background:var(--accent-ink);transform:translateY(-1px);box-shadow:0 6px 18px rgba(15,143,85,.32)}
+.btn-g{background:rgba(255,255,255,.7);color:var(--ink);border-color:var(--line-2)}
+.btn-g:hover{border-color:var(--ink)}
 
-/* terminal: the product's own output, not a screenshot */
-.term{background:var(--panel);border:1px solid var(--panel-edge);border-radius:12px;padding:1.15rem 1.25rem;overflow-x:auto}
-.term pre{margin:0;font:13px/1.65 var(--mono);white-space:pre;tab-size:2}
-.term .d{color:var(--muted)}
-.term .h{color:var(--high)}
-.term .w{color:var(--warn)}
-.term .g{color:var(--good)}
-.term .b{font-weight:500}
-figcaption{font:12.5px/1.5 var(--mono);color:var(--muted);margin-top:.6rem}
+/* ---------- hero ---------- */
+.hero{position:relative;z-index:2;padding:60px 0 0}
+.hero-in{max-width:900px;margin:0 auto;display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:22px}
+@media(max-width:720px){.hero{padding-top:34px}}
+.badge{display:inline-flex;align-items:center;gap:9px;background:rgba(255,255,255,.8);border:1px solid var(--line);
+  border-radius:999px;padding:5px 14px 5px 6px;font-size:12.5px;color:var(--body);box-shadow:var(--lift-sm)}
+.badge b{background:var(--accent);color:#fff;border-radius:999px;padding:3px 9px;font:500 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase}
+.hero h1{margin-top:20px;max-width:19ch}
+.hero h1 .dim{color:var(--mute)}
+.dot{color:var(--accent)}
+.hero-lead{font-size:1.1rem;color:var(--body);max-width:56ch;margin-top:22px}
+.hero-act{width:min(640px,100%);margin:30px auto 0;display:flex;flex-direction:column;align-items:stretch}
+.hero-cta{display:flex;gap:11px;flex-wrap:wrap;justify-content:center}
+.hero-meta{font:11.5px/1.6 var(--mono);color:var(--mute);margin-top:12px}
+.install{margin-top:34px;display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);
+  border-radius:999px;padding:13px 20px;font:500 15px/1 var(--mono);color:var(--ink);box-shadow:var(--lift-sm);overflow-x:auto;white-space:nowrap}
+.install span{color:var(--mute);user-select:none}
 
-/* checks */
-.checks{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden;grid-template-columns:1fr 1fr}
-.check{background:var(--paper);padding:1.25rem 1.3rem;display:flex;flex-direction:column;gap:.45rem}
-.check h3{margin:0;font:600 1rem/1.3 var(--body)}
-.check ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:.3rem}
-.check li{font:13px/1.5 var(--mono);color:var(--muted)}
+/* ---------- chapter header: name, rule to the edge, position ---------- */
+.chap{display:flex;align-items:center;gap:11px;margin-bottom:34px;
+  width:100vw;margin-inline:calc(50% - 50vw);padding-inline:calc(50vw - 50%);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding-block:18px;
+  font:500 11px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase}
+.chap-mark{width:12px;height:12px;flex:none;color:var(--accent)}
+.chap-label{color:var(--ink);white-space:nowrap}
+.chap-rule{flex:1 1 auto;min-width:20px;height:1px;background:var(--line-2)}
+.chap-n{flex:none;color:var(--mute);letter-spacing:.1em;font-variant-numeric:tabular-nums}
 
-/* study table */
-table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
-th,td{padding:.6rem .5rem;text-align:right;font-size:14.5px;border-bottom:1px solid var(--rule)}
-th{font:500 11.5px/1.3 var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
-th:first-child,td:first-child{text-align:left}
-tr.me td{font-weight:600}
-tr:last-child td{border-bottom:0}
-.bar{display:inline-block;height:7px;border-radius:3.5px;background:var(--muted);vertical-align:middle;margin-right:.55rem}
-tr.me .bar{background:var(--good)}
+/* ---------- sections ---------- */
+section{position:relative;padding:62px 0}
+.sec-h{max-width:58ch}
+.sec-h h2{margin-top:12px}
+.sec-h p{margin-top:16px;max-width:56ch}
 
-/* numbers */
-.stats{display:flex;flex-wrap:wrap;gap:1.75rem 3rem}
-.stats div{display:flex;flex-direction:column}
-.stats b{font:600 2.4rem/1 var(--body);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-.stats span{font:12.5px/1.5 var(--mono);color:var(--muted);margin-top:.3rem}
+/* panel: hairline, 14px, registration marks drawn without extra DOM */
+.panel{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:22px 24px}
+.marked::before{content:"";position:absolute;inset:9px;pointer-events:none;background-size:5px 5px;background-repeat:no-repeat;
+  background-position:0 0,100% 0,0 100%,100% 100%;
+  background-image:linear-gradient(var(--line-2),var(--line-2)),linear-gradient(var(--line-2),var(--line-2)),linear-gradient(var(--line-2),var(--line-2)),linear-gradient(var(--line-2),var(--line-2))}
+.panel>*{position:relative}
 
-footer{border-top:1px solid var(--rule);padding-top:1.5rem;display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;font:13px/1.6 var(--mono);color:var(--muted);max-width:50rem;margin:0 auto 4rem;padding-inline:16px}
-@media (max-width:620px){
-  main{gap:4.25rem}
-  header{padding-top:3rem}
-  .checks{grid-template-columns:1fr}
-  .term pre{font-size:11.5px}
-}
+/* console: the product's own output, not a screenshot */
+.console{margin-top:28px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--lift-sm);overflow:hidden}
+.console-h{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line);background:var(--sunk);
+  font:500 10.5px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--mute)}
+.console-h i{width:7px;height:7px;border-radius:999px;background:var(--accent);flex:none}
+.console-h b{margin-left:auto;font-weight:500;color:var(--mute);letter-spacing:.1em}
+.console pre{margin:0;padding:20px 22px;overflow-x:auto;font:13px/1.65 var(--mono);white-space:pre;color:var(--body)}
+.console .d{color:var(--mute)}.console .h{color:var(--high)}.console .w{color:var(--warn)}
+.console .g{color:var(--accent-ink)}.console .b{color:var(--ink);font-weight:500}
+figcaption{margin-top:12px;font:11.5px/1.6 var(--mono);color:var(--mute)}
+
+/* checks: one surface, hairline rows — not a grid of cards */
+.checks{margin-top:28px;display:grid;grid-template-columns:1fr 1fr;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.check{padding:24px;border-left:1px solid var(--line);border-top:1px solid var(--line)}
+.check:nth-child(-n+2){border-top:0}
+.check:nth-child(odd){border-left:0}
+.check h3{margin-bottom:12px}
+.check ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+.check li{font-size:13.5px;color:var(--body);padding-left:16px;position:relative}
+.check li::before{content:"";position:absolute;left:0;top:.62em;width:5px;height:5px;background:var(--line-2)}
+.check code{font:12.5px var(--mono);color:var(--ink)}
+@media(max-width:760px){.checks{grid-template-columns:1fr}.check{border-left:0;border-top:1px solid var(--line)}.check:nth-child(1){border-top:0}}
+
+/* figures */
+.figs{margin-top:28px;display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.fig{padding:24px;border-left:1px solid var(--line)}
+.fig:first-child{border-left:0}
+.fig .n{font-size:2rem;font-weight:500;letter-spacing:-.038em;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}
+.fig .k{margin-top:11px;font:500 9.5px/1.5 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--mute)}
+@media(max-width:700px){.figs{grid-template-columns:1fr}.fig{border-left:0;border-top:1px solid var(--line)}.fig:first-child{border-top:0}}
+
+/* the study, on the night ground */
+.band{background:var(--night);color:var(--night-mute);margin-top:0}
+.band h2,.band .chap-label,.band .n{color:var(--night-ink)}
+.band .chap{border-color:rgba(255,255,255,.22)}
+.band .chap-n{color:var(--night-mute)}
+.band table{width:100%;border-collapse:collapse;margin-top:28px;font-variant-numeric:tabular-nums}
+.band th{text-align:left;padding:10px 0;border-bottom:1px solid var(--night-line);
+  font:500 9.5px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--night-mute)}
+.band th:last-child,.band td:last-child{text-align:right}
+.band td{padding:13px 0;border-bottom:1px solid var(--night-line);font-size:14.5px;color:var(--night-ink)}
+.band tr:last-child td{border-bottom:0}
+.band .bar{display:inline-block;height:6px;background:var(--night-line);vertical-align:middle;margin-right:12px;border-radius:3px}
+.band .me td{color:#fff}
+.band .me .bar{background:var(--accent)}
+.band .lead{margin-top:16px;max-width:56ch;color:var(--night-mute)}
+
+/* close */
+.final{text-align:center;padding:84px 0 92px}
+.final h2{max-width:20ch;margin:0 auto}
+.final .install{margin:28px auto 0;justify-content:center;width:max-content;max-width:100%}
+.final p{margin:16px auto 0;max-width:52ch;color:var(--body)}
+footer{border-top:1px solid var(--line);padding:26px 0 60px}
+footer .wrap{display:flex;flex-wrap:wrap;gap:8px 24px;font:11px/1.8 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--mute)}
+footer a:hover{color:var(--ink)}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important;scroll-behavior:auto}}
 </style>
 </head>
 <body>
-<main>
+<div class="lattice" aria-hidden="true"></div>
 
-<header>
-  <div class="wordmark">
-    <h1>zomb</h1>
-    <span class="label">v0.0.1 · MIT</span>
+<nav class="nav"><div class="nav-in">
+  <a class="logo" href="#top">
+    <svg class="logo-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2" y="2" width="6" height="6"/><rect x="11" y="2" width="6" height="6"/><rect x="2" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6" opacity=".35"/><rect x="2" y="20" width="15" height="2"/></svg>
+    <span class="logo-word">zomb</span>
+  </a>
+  <div class="nav-links">
+    <a href="#scan">The scan</a><a href="#guard">Guard</a><a href="#study">The study</a><a href="#ci">Pull requests</a>
   </div>
-  <p class="lede">Your agent writes code fast. zomb checks what it left behind: the security holes, the files nothing uses any more, three libraries doing one job, and the shortcuts it took to make your tests pass.</p>
-  <div class="cmd"><b>$</b> npx zomb</div>
-  <p class="meta"><span>JavaScript and TypeScript</span><span>no account, no API key</span><span>your code never leaves your machine</span></p>
-</header>
+  <a class="btn btn-p" href="https://github.com/Open-Dev-Society/zomb">Get zomb</a>
+</div></nav>
 
-<section>
-  <p class="label">One command, one report</p>
-  <h2>It reads your repo the way a careful reviewer would, then tells you what to delete first.</h2>
-  <figure class="term">
+<header class="hero" id="top"><div class="wrap"><div class="hero-in">
+  <span class="badge"><b>v0.0.1</b> MIT, and free for good</span>
+  <h1>Your agent writes code fast. <span class="dim">zomb checks what it left behind<span class="dot">.</span></span></h1>
+  <p class="hero-lead">The security holes, the files nothing uses any more, three libraries doing one job, and the shortcuts it took to make your tests pass.</p>
+  <div class="hero-act">
+    <div class="hero-cta">
+      <a class="btn btn-p" href="#scan">See a real scan</a>
+      <a class="btn btn-g" href="https://github.com/Open-Dev-Society/zomb">Read the source</a>
+    </div>
+    <p class="hero-meta">JavaScript and TypeScript · no account, no API key · your code never leaves your machine</p>
+    <div class="install"><span>$</span>npx zomb</div>
+  </div>
+</div></div></header>
+
+<section id="scan"><div class="wrap">
+  <div class="chap"><svg class="chap-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="0" y="0" width="7" height="7"/><rect x="17" y="0" width="7" height="7"/><rect x="0" y="17" width="7" height="7"/><rect x="17" y="17" width="7" height="7"/></svg>
+    <span class="chap-label">The scan</span><span class="chap-rule"></span><span class="chap-n">01 / 06</span></div>
+  <div class="sec-h">
+    <p class="eyebrow">One command, one report</p>
+    <h2>It reads your repo the way a careful reviewer would, then tells you what to delete first.</h2>
+    <p>Four passes — security, zombie code, sprawl, architecture — written to one HTML file. Nothing is uploaded.</p>
+  </div>
+  <figure class="console">
+    <div class="console-h"><i></i>openreadme<b>73 files · 9,104 lines</b></div>
 <pre><span class="d">$</span> npx zomb
 
 <span class="d">╭──────────────────────────────────────────────────────────────╮</span>
@@ -130,66 +239,52 @@ footer{border-top:1px solid var(--rule);padding-top:1.5rem;display:flex;flex-wra
   <span class="d">nothing imports or names these · 14 of 17 written by an agent</span>
   <span class="d">unused packages</span> firebase <span class="d">·</span> tw-animate-css <span class="d">·</span> three
 
-<span class="b">VS 336 PUBLIC REPOS</span> <span class="d">──────── agents wrote 86% of your new code</span>
-  this repo deletes <span class="b">11</span> lines per 100 added     <span class="w">below the human average</span>
-  <span class="d">study</span> humans 33 <span class="d">·</span> Claude 21 <span class="d">·</span> Copilot 22 <span class="d">·</span> Codex 24 <span class="d">·</span> Cursor 25
-
 <span class="b">NEXT</span> <span class="d">──────────────────────────────────────────────</span> <span class="d">31 tasks</span>
   <span class="g">zomb fix</span> <span class="d">deletes the dead code on a branch, checking your build</span>
 </pre>
-    <figcaption>A real scan of openreadme, an open-source repo written mostly with Claude Code.</figcaption>
   </figure>
-</section>
+  <figcaption>A real scan of openreadme, an open-source repo written mostly with Claude Code.</figcaption>
 
-<section>
-  <p class="label">What it checks</p>
   <div class="checks">
-    <div class="check">
-      <h3>Security</h3>
-      <ul>
-        <li>API keys pasted into code, shown masked</li>
-        <li>committed <code>.env</code> files</li>
-        <li>secrets shipped to the browser in <code>NEXT_PUBLIC_*</code></li>
-        <li>routes that write to your database with no auth check</li>
-        <li>SQL and shell built from strings, <code>eval</code>, raw HTML</li>
-        <li>vulnerable production packages</li>
-      </ul>
-    </div>
-    <div class="check">
-      <h3>Zombie code</h3>
-      <ul>
-        <li>files nothing imports or names</li>
-        <li>files only their own tests keep alive</li>
-        <li>unused packages and dead exports</li>
-        <li>pages and API routes nothing links to</li>
-      </ul>
-    </div>
-    <div class="check">
-      <h3>Sprawl</h3>
-      <ul>
-        <li>lines added against lines deleted, month by month</li>
-        <li>three icon sets, two date libraries</li>
-        <li><code>LandingV2</code> next to <code>Landing</code></li>
-        <li>copy-pasted blocks and helpers defined twice</li>
-      </ul>
-    </div>
-    <div class="check">
-      <h3>Architecture</h3>
-      <ul>
-        <li>import cycles</li>
-        <li>files past 500 lines</li>
-        <li>shared code scattered across <code>utils/</code>, <code>lib/</code>, <code>helpers/</code></li>
-        <li>deep <code>../../../</code> imports and mixed file naming</li>
-      </ul>
-    </div>
+    <div class="check"><h3>Security</h3><ul>
+      <li>API keys pasted into code, shown masked</li>
+      <li>committed <code>.env</code> files</li>
+      <li>secrets shipped to the browser in <code>NEXT_PUBLIC_*</code></li>
+      <li>routes that write to your database with no auth check</li>
+      <li>SQL and shell built from strings, <code>eval</code>, raw HTML</li>
+      <li>vulnerable production packages</li>
+    </ul></div>
+    <div class="check"><h3>Zombie code</h3><ul>
+      <li>files nothing imports or names</li>
+      <li>files only their own tests keep alive</li>
+      <li>unused packages and dead exports</li>
+      <li>pages and API routes nothing links to</li>
+    </ul></div>
+    <div class="check"><h3>Sprawl</h3><ul>
+      <li>lines added against lines deleted, month by month</li>
+      <li>three icon sets, two date libraries</li>
+      <li><code>LandingV2</code> next to <code>Landing</code></li>
+      <li>copy-pasted blocks and helpers defined twice</li>
+    </ul></div>
+    <div class="check"><h3>Architecture</h3><ul>
+      <li>import cycles and files past 500 lines</li>
+      <li>shared code scattered across <code>utils/</code>, <code>lib/</code>, <code>helpers/</code></li>
+      <li>deep <code>../../../</code> imports</li>
+      <li>mixed file naming</li>
+    </ul></div>
   </div>
-</section>
+</div></section>
 
-<section>
-  <p class="label">Guard</p>
-  <h2>It also stops the mess while the agent is still writing it.</h2>
-  <p>Install the Claude Code plugin and zomb checks every edit before it lands, in about 50&nbsp;ms. It reads only the lines being added, so removing a suppression is never punished.</p>
-  <figure class="term">
+<section id="guard"><div class="wrap">
+  <div class="chap"><svg class="chap-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="0" y="0" width="7" height="7"/><rect x="17" y="0" width="7" height="7"/><rect x="0" y="17" width="7" height="7"/><rect x="17" y="17" width="7" height="7"/></svg>
+    <span class="chap-label">Guard</span><span class="chap-rule"></span><span class="chap-n">02 / 06</span></div>
+  <div class="sec-h">
+    <p class="eyebrow">Before the edit lands</p>
+    <h2>It also stops the mess while the agent is still writing it.</h2>
+    <p>Install the Claude Code plugin and zomb checks every edit in about 50&nbsp;ms. It reads only the lines being added, so removing a suppression is never punished.</p>
+  </div>
+  <figure class="console">
+    <div class="console-h"><i></i>claude code<b>PreToolUse hook</b></div>
 <pre><span class="d">Claude was asked to add a lucide-react icon with a @ts-ignore,
 and to create ChatV2.tsx next to Chat.tsx.</span>
 
@@ -201,22 +296,25 @@ and to create ChatV2.tsx next to Chat.tsx.</span>
    <span class="h">✗</span> ChatV2.tsx looks like a new version of src/Chat.tsx, which already exists.
      Edit Chat.tsx instead; keeping both leaves zombie code.
 
-<span class="d">Claude used FaGithub from react-icons, kept the types honest,
-and improved Chat.tsx in place. It also noticed lucide-react
-was never installed, so the @ts-ignore would have hidden a
-broken import until the app ran.</span>
+<span class="d">Claude used FaGithub from react-icons, kept the types honest, and
+improved Chat.tsx in place. It also noticed lucide-react was never
+installed, so the @ts-ignore would have hidden a broken import.</span>
 </pre>
-    <figcaption>Verbatim from a real Claude Code session.</figcaption>
   </figure>
-</section>
+  <figcaption>Verbatim from a real Claude Code session.</figcaption>
+</div></section>
 
-<section>
-  <p class="label">Blueprint</p>
-  <h2>The rules your codebase already follows, written down once and held to.</h2>
-  <p><code>zomb blueprint</code> reads the code and proposes only the rules it mostly follows already, each with its evidence. You approve them once; Guard then holds every agent to them, and the pull request check holds every change.</p>
-  <figure class="term">
-<pre><span class="d"># .zomb/blueprint.yml</span>
-libraries:
+<section id="blueprint"><div class="wrap">
+  <div class="chap"><svg class="chap-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="0" y="0" width="7" height="7"/><rect x="17" y="0" width="7" height="7"/><rect x="0" y="17" width="7" height="7"/><rect x="17" y="17" width="7" height="7"/></svg>
+    <span class="chap-label">Blueprint</span><span class="chap-rule"></span><span class="chap-n">03 / 06</span></div>
+  <div class="sec-h">
+    <p class="eyebrow">Your rules, held to</p>
+    <h2>The conventions your codebase already follows, written down once.</h2>
+    <p><code>zomb blueprint</code> proposes only rules the code mostly follows already, each with its evidence. You approve them once; Guard then holds every agent to them and the pull request check holds every change.</p>
+  </div>
+  <figure class="console">
+    <div class="console-h"><i></i>.zomb/blueprint.yml<b>inferred, then approved</b></div>
+<pre>libraries:
   icons: <span class="b">"react-icons"</span>          <span class="d"># 5 files; also lucide-react (1)</span>
   http: <span class="b">"fetch"</span>                 <span class="d"># 4 files</span>
 folders:
@@ -232,57 +330,67 @@ files:
   maxLines: <span class="b">500</span>                <span class="d"># 3 files over it today</span>
 </pre>
   </figure>
-</section>
+</div></section>
 
-<section>
-  <p class="label">The State of AI Code</p>
-  <h2>Agents add code. They are much slower to take it away.</h2>
-  <p>We measured 52,688 commits in 336 public JavaScript and TypeScript repos since October 2025, and compared every agent with the humans committing to those same repos. Lines deleted for every 100 added:</p>
+<section class="band" id="study"><div class="wrap">
+  <div class="chap"><svg class="chap-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="0" y="0" width="7" height="7"/><rect x="17" y="0" width="7" height="7"/><rect x="0" y="17" width="7" height="7"/><rect x="17" y="17" width="7" height="7"/></svg>
+    <span class="chap-label">The State of AI Code</span><span class="chap-rule"></span><span class="chap-n">04 / 06</span></div>
+  <div class="sec-h">
+    <p class="eyebrow">52,688 commits measured</p>
+    <h2>Agents add code. They are much slower to take it away.</h2>
+    <p class="lead">336 public JavaScript and TypeScript repos since October 2025, with every agent compared against the humans committing to those same repos. Lines deleted for every 100 added:</p>
+  </div>
   <table>
     <thead><tr><th>Author</th><th>Deleted per 100 added</th></tr></thead>
     <tbody>
-      <tr class="me"><td>Humans</td><td><span class="bar" style="width:66px"></span>33</td></tr>
-      <tr><td>Devin</td><td><span class="bar" style="width:73px"></span>37</td></tr>
-      <tr><td>Jules</td><td><span class="bar" style="width:57px"></span>29</td></tr>
-      <tr><td>Cursor</td><td><span class="bar" style="width:51px"></span>25</td></tr>
-      <tr><td>Codex</td><td><span class="bar" style="width:48px"></span>24</td></tr>
-      <tr><td>Copilot</td><td><span class="bar" style="width:44px"></span>22</td></tr>
-      <tr><td>Claude</td><td><span class="bar" style="width:42px"></span>21</td></tr>
+      <tr class="me"><td>Humans</td><td><span class="bar" style="width:92px"></span>33</td></tr>
+      <tr><td>Devin</td><td><span class="bar" style="width:103px"></span>37</td></tr>
+      <tr><td>Jules</td><td><span class="bar" style="width:81px"></span>29</td></tr>
+      <tr><td>Cursor</td><td><span class="bar" style="width:70px"></span>25</td></tr>
+      <tr><td>Codex</td><td><span class="bar" style="width:67px"></span>24</td></tr>
+      <tr><td>Copilot</td><td><span class="bar" style="width:61px"></span>22</td></tr>
+      <tr><td>Claude</td><td><span class="bar" style="width:59px"></span>21</td></tr>
     </tbody>
   </table>
-  <p class="meta"><span>Claude and Codex took fewer shortcuts than their humans</span><span>agent commits run 1.8–2.3× larger</span></p>
-  <div class="stats">
-    <div><b>336</b><span>public repos</span></div>
-    <div><b>52,688</b><span>commits measured</span></div>
-    <div><b>18.7M</b><span>lines added</span></div>
+  <div class="figs" style="background:var(--night-2);border-color:var(--night-line)">
+    <div class="fig" style="border-color:var(--night-line)"><p class="n">336</p><p class="k">public repos</p></div>
+    <div class="fig" style="border-color:var(--night-line)"><p class="n">52,688</p><p class="k">commits measured</p></div>
+    <div class="fig" style="border-color:var(--night-line)"><p class="n">18.7M</p><p class="k">lines added</p></div>
   </div>
-</section>
+  <p class="lead" style="margin-top:24px">Claude and Codex took fewer shortcuts than their humans; agent commits run 1.8–2.3× larger. Every scan ends by placing your own repo on this scale.</p>
+</div></section>
 
-<section>
-  <p class="label">On every pull request</p>
-  <h2>A check that fails on what this change broke, not on debt you inherited.</h2>
-  <p><code>zomb --save-baseline</code> accepts today's findings, so only new ones can fail a build. Add the GitHub Action, or install the app and skip the workflow file.</p>
-  <figure class="term">
-<pre><span class="b">zomb: 3 findings in this change</span> <span class="d">(since `main`)</span>
+<section id="ci"><div class="wrap">
+  <div class="chap"><svg class="chap-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="0" y="0" width="7" height="7"/><rect x="17" y="0" width="7" height="7"/><rect x="0" y="17" width="7" height="7"/><rect x="17" y="17" width="7" height="7"/></svg>
+    <span class="chap-label">On every pull request</span><span class="chap-rule"></span><span class="chap-n">05 / 06</span></div>
+  <div class="sec-h">
+    <p class="eyebrow">A gate that only fails on new damage</p>
+    <h2>It checks what this change broke, not the debt you inherited.</h2>
+    <p><code>zomb --save-baseline</code> accepts today's findings, so only new ones can fail a build. Add the GitHub Action, or install the app and skip the workflow file.</p>
+  </div>
+  <div class="panel marked" style="margin-top:28px">
+    <p class="eyebrow">zomb · pull request #1</p>
+    <h3 style="margin-top:12px">3 findings in this change <span class="num" style="color:var(--mute);font-weight:400">(since main)</span></h3>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:10px 0;border-bottom:1px solid var(--line);color:var(--high);font-weight:600;white-space:nowrap">high</td><td style="padding:10px 0 10px 18px;border-bottom:1px solid var(--line);color:var(--ink)">GitHub token in the code</td><td style="padding:10px 0;border-bottom:1px solid var(--line);text-align:right;font:12.5px var(--mono);color:var(--mute)">src/github.ts:2</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid var(--line);color:var(--warn);font-weight:600">medium</td><td style="padding:10px 0 10px 18px;border-bottom:1px solid var(--line);color:var(--ink)">Silences the type checker</td><td style="padding:10px 0;border-bottom:1px solid var(--line);text-align:right;font:12.5px var(--mono);color:var(--mute)">test/math.test.ts:2</td></tr>
+      <tr><td style="padding:10px 0;color:var(--mute);font-weight:600">low</td><td style="padding:10px 0 10px 18px;color:var(--ink)">Delete src/demo.ts</td><td style="padding:10px 0;text-align:right;font:12.5px var(--mono);color:var(--mute)">src/demo.ts</td></tr>
+    </table>
+  </div>
+  <figcaption>The comment zomb left on its own first pull request. It updates in place on every push.</figcaption>
+</div></section>
 
-<span class="h">1 high</span> <span class="d">·</span> <span class="w">1 medium</span> <span class="d">· 1 low</span>
-
-<span class="d">│</span> <span class="h">🔴 high</span>   <span class="d">│</span> security  <span class="d">│</span> GitHub token in the code   <span class="d">│</span> src/github.ts:2
-<span class="d">│</span> <span class="w">🟠 medium</span> <span class="d">│</span> shortcuts <span class="d">│</span> Silences the type checker  <span class="d">│</span> test/math.test.ts:2
-<span class="d">│</span> <span class="d">⚪ low</span>    <span class="d">│</span> zombie    <span class="d">│</span> Delete src/demo.ts         <span class="d">│</span> src/demo.ts
-</pre>
-    <figcaption>The comment zomb left on its own first pull request. It updates in place on every push.</figcaption>
-  </figure>
-</section>
-
-<section>
-  <p class="label">Fix</p>
-  <h2>Deleting is the only part a build can prove, so that is the part zomb does itself.</h2>
-  <p><code>zomb fix</code> works on a new branch. It runs your typecheck, lint, tests and build first and keeps the ones that pass as its gates, then deletes in small batches and re-runs them after each one. A batch that breaks a check is undone and retried item by item, so anything that turns out to be needed is reported, not removed. No AI, no API key.</p>
-  <figure class="term">
-<pre><span class="d">$</span> npx zomb fix
-
-<span class="b">CHECKS</span> <span class="d">───────────── the ones that pass now judge every change</span>
+<section id="fix"><div class="wrap">
+  <div class="chap"><svg class="chap-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="0" y="0" width="7" height="7"/><rect x="17" y="0" width="7" height="7"/><rect x="0" y="17" width="7" height="7"/><rect x="17" y="17" width="7" height="7"/></svg>
+    <span class="chap-label">Fix</span><span class="chap-rule"></span><span class="chap-n">06 / 06</span></div>
+  <div class="sec-h">
+    <p class="eyebrow">The part a build can prove</p>
+    <h2>Deleting is the one change a build can verify, so that is the part zomb does itself.</h2>
+    <p><code>zomb fix</code> works on a new branch. It runs your typecheck, lint, tests and build first and keeps the ones that pass as its gates, then deletes in small batches and re-runs them after each. A batch that breaks a check is undone and retried item by item, so anything that turns out to be needed is reported, not removed. No AI, no API key.</p>
+  </div>
+  <figure class="console">
+    <div class="console-h"><i></i>zomb fix<b>73 seconds</b></div>
+<pre><span class="b">CHECKS</span> <span class="d">───────────── the ones that pass now judge every change</span>
   <span class="g">✓</span> typecheck
   <span class="w">✗</span> lint        <span class="d">already failing, ignored</span>
   <span class="g">✓</span> build
@@ -297,25 +405,21 @@ files:
   17 files deleted <span class="d">·</span> dead exports removed <span class="d">·</span> 7 packages uninstalled
   <span class="w">kept</span> eslint-config-next <span class="d">(lint loads it by name, so it isn't dead)</span>
 </pre>
-    <figcaption>73 seconds on openreadme, with typecheck and <code>next build</code> green after every batch.</figcaption>
   </figure>
-</section>
+  <figcaption>On openreadme, with typecheck and <code>next build</code> green after every batch.</figcaption>
+</div></section>
 
-<section>
-  <p class="label">Install</p>
-  <h2>Three ways in, all free.</h2>
-  <div class="cmd"><b>$</b> npx zomb</div>
-  <div class="cmd"><b>$</b> claude plugin install zomb@zomb</div>
-  <div class="cmd"><b>$</b> npx zomb blueprint --write</div>
-  <p>The CLI, the plugin, the GitHub Action and the self-hosted server are MIT and stay free. The hosted version adds trends across repos and a weekly clean-up issue handed to the agent your team already pays for.</p>
-</section>
+<section class="final"><div class="wrap">
+  <h2>Run it on the repo you are least sure about.</h2>
+  <div class="install"><span>$</span>npx zomb</div>
+  <p>The CLI, the Claude Code plugin, the GitHub Action and the self-hosted server are MIT and stay free. The hosted version adds trends across repos and a weekly clean-up handed to the agent your team already pays for.</p>
+</div></section>
 
-</main>
-<footer>
+<footer><div class="wrap">
   <span>MIT</span>
   <a href="https://github.com/Open-Dev-Society/zomb">github.com/Open-Dev-Society/zomb</a>
   <a href="https://github.com/Open-Dev-Society/zomb/tree/main/research">The State of AI Code</a>
   <span>Open Dev Society</span>
-</footer>
+</div></footer>
 </body>
 </html>

@@ -110,15 +110,13 @@ test('pull requests get a check and a comment; the weekly clean-up opens an issu
   }
 });
 
-test('the field notches every author on one scale, outermost labels turned inward', async () => {
+test('the field places your repos among the study authors, biggest first', async () => {
   const { field } = await import('../cloud/server.ts');
   const authors = { Human: { deletedPer100: 33.07 }, Claude: { deletedPer100: 20.77 }, Devin: { deletedPer100: 36.6 } };
   const html = field(24, authors);
-  const marks = [...html.matchAll(/class="mk ([a-z]+)"[^>]*left:([\d.]+)%/g)].map(([, cls, x]) => [cls, Number(x)]);
-  assert.deepEqual(marks.map(([, x]) => x), [52.5, 60, 82.5, 92.5], 'notches ascend, scaled to a round 40');
-  assert.equal(marks.filter(([c]) => c === 'you').length, 1);
-  assert.equal(marks[1][0], 'you', 'your repos sit between claude and humans');
-  assert.deepEqual(marks.filter(([c]) => c !== 'you').map(([c]) => c), ['lo', 'hi', 'lo'], 'label depth alternates so neighbours never collide');
-  assert.match(html, /class="mk lo"[^>]*left:92.50%[\s\S]{0,200}?translateX\(-100%\)/, 'the last label turns inward');
-  assert.equal(field(null, authors).includes('you'), false, 'no notch for a fleet with too little history');
+  const rows = [...html.matchAll(/<tr class="(me)?"><td>([^<]+)<\/td><td><span class="bar" style="width:(\d+)px"><\/span>(\d+)/g)].map(([, me, name, w, v]) => [name, Number(v), Number(w), Boolean(me)]);
+  assert.deepEqual(rows.map(([n]) => n), ['Devin', 'Humans', 'Your repos', 'Claude'], 'ranked, with yours in place');
+  assert.deepEqual(rows.find(([n]) => n === 'Your repos'), ['Your repos', 24, 78, true]);
+  assert.equal(rows[0][2], 120, 'the longest bar sets the scale');
+  assert.equal(field(null, authors).includes('Your repos'), false, 'no row for a fleet with too little history');
 });
