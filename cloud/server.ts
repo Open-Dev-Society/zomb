@@ -228,75 +228,102 @@ function landing(cfg: ReturnType<typeof config>) {
 }
 
 const DASH_CSS = `
-.bar{display:flex;align-items:center;gap:16px;padding:14px var(--gutter);border-bottom:1px solid var(--line);background:var(--paper);position:sticky;top:0;z-index:3}
+/* masthead */
+.bar{display:flex;align-items:center;gap:14px;padding:15px var(--gutter);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:4;background:var(--paper)}
 .bar .word{font:600 19px/1 var(--display);letter-spacing:-.045em;color:var(--ink)}
-.bar .sep{width:1px;height:18px;background:var(--line-2)}
-.bar .who{margin-left:auto;display:flex;align-items:center;gap:14px;font:12.5px/1 var(--mono);color:var(--mute)}
-.bar .who a{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-2)}
+.bar .who{margin-left:auto;display:flex;align-items:center;gap:16px;font:11px/1 var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--mute)}
+.bar .who a:hover{color:var(--ink)}
 
-/* views: text tabs on a rule, the active one marked by ink, not a pill */
-.views{display:flex;gap:26px;padding:0 var(--gutter);border-bottom:1px solid var(--line);overflow-x:auto}
-.views a{position:relative;display:flex;align-items:baseline;gap:7px;padding:13px 0 12px;font-size:13.5px;color:var(--mute);white-space:nowrap;transition:color .15s var(--ease)}
-.views a b{font:500 11.5px/1 var(--mono);color:var(--faint)}
+/* views: text tabs on the rule, active marked in ink */
+.views{display:flex;gap:26px;padding:0 var(--gutter);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.views a{position:relative;display:flex;align-items:baseline;gap:7px;padding:12px 0 11px;font-size:13.5px;color:var(--mute);white-space:nowrap;transition:color .15s var(--ease)}
+.views a b{font:500 11px/1 var(--mono);color:var(--faint)}
 .views a:hover{color:var(--ink)}
 .views a.on{color:var(--ink);font-weight:600}
 .views a.on b{color:var(--mute)}
 .views a.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--ink)}
 
-/* the section rule, promoted from the terminal: label left, count right */
-.rule{display:flex;align-items:baseline;gap:14px;padding:30px var(--gutter) 0}
-.rule::after{content:"";flex:1 1 auto;height:1px;background:var(--line);transform:translateY(-3px)}
-.rule h2{font-size:14.5px;letter-spacing:-.01em}
-.rule .count{font:500 11.5px/1 var(--mono);color:var(--mute);font-variant-numeric:tabular-nums;white-space:nowrap}
-.note{margin:6px 0 0;padding:0 var(--gutter);font-size:13px;color:var(--mute);max-width:70ch}
+/* ── document furniture ──────────────────────────────────────────────────────
+   zomb's CLI prints its passes in a fixed order and rules each one off with its
+   count. The dashboard uses the same spine: a number, a name, a rule to the
+   page edge, a count. Full-bleed, because a rule that stops at the text measure
+   reads as an underline rather than as a boundary. */
+.chap{display:flex;align-items:center;gap:12px;margin-top:40px;padding:14px var(--gutter);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  font:500 11px/1 var(--mono);text-transform:uppercase;letter-spacing:.18em;color:var(--mute)}
+.chap .no{color:var(--faint);font-variant-numeric:tabular-nums}
+.chap .nm{color:var(--ink);white-space:nowrap}
+.chap .ln{flex:1 1 auto;min-width:16px;height:1px;background:var(--line-2)}
+.chap .ct{font-variant-numeric:tabular-nums;white-space:nowrap}
+.note{margin:14px 0 0;padding:0 var(--gutter);font-size:13px;color:var(--mute);max-width:72ch}
 
-/* figures: one ruled row, divided by hairlines — no boxes, no shadows */
-.figures{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:18px 0 4px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface)}
-.fig{padding:16px var(--gutter);border-left:1px solid var(--line);display:flex;flex-direction:column;gap:9px;min-width:0}
+/* figures: one ruled row; the caption sits under the number, not over it */
+.figures{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:20px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.fig{padding:18px var(--gutter);border-left:1px solid var(--line);display:flex;flex-direction:column;gap:11px;min-width:0}
 .fig:first-child{border-left:0}
-.fig .eyebrow{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fig .v{font:500 38px/1 var(--display);letter-spacing:-.045em;color:var(--ink);font-variant-numeric:tabular-nums}
-.fig .v u{text-decoration:none;font-size:.5em;letter-spacing:-.02em;color:var(--mute);margin-left:1px}
-.fig .foot{display:flex;align-items:center;gap:8px;min-width:0;font-size:12.5px;color:var(--mute)}
-.fig .foot em{font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.delta{flex:none;font:500 11.5px/1 var(--mono);font-variant-numeric:tabular-nums}
+.fig .v{font:500 34px/1 var(--display);letter-spacing:-.04em;color:var(--ink);font-variant-numeric:tabular-nums}
+.fig .v u{text-decoration:none;font-size:.46em;letter-spacing:-.01em;color:var(--mute);margin-left:2px}
+.fig .k{font:500 10px/1.4 var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--mute)}
+.fig .k em{display:block;font-style:normal;letter-spacing:.04em;text-transform:none;font-size:11.5px;color:var(--faint);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.delta{font-variant-numeric:tabular-nums}
 .delta.better{color:var(--good)}.delta.worse{color:var(--high)}.delta.same{color:var(--faint)}
 
-/* table: hairline rows, numbers right, nothing else */
-.scroll{overflow:auto;max-height:min(62vh,560px);border-top:1px solid var(--line);margin-top:18px}
+/* ── the field ───────────────────────────────────────────────────────────────
+   The one figure that is a measurement against others is drawn as one: a scale
+   with every author of the study notched on it and your repos struck through it
+   in ink. Labels alternate depth so neighbouring notches never collide. */
+.field{position:relative;height:118px;margin:0 var(--gutter);border-bottom:1px solid var(--line)}
+.field .axis{position:absolute;left:0;right:0;top:56px;height:1px;background:var(--line-2)}
+.field .end{position:absolute;top:62px;font:11px/1 var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.field .end.l{left:0}.field .end.r{right:0}
+.mk{position:absolute;top:0;bottom:0;width:0}
+.mk i{position:absolute;width:1px;background:var(--line-2)}
+.mk .lab{position:absolute;font:11px/1 var(--mono);color:var(--mute);white-space:nowrap;font-variant-numeric:tabular-nums}
+.mk.lo i{top:56px;height:8px}
+.mk.lo .lab{top:70px}
+.mk.hi i{top:56px;height:22px}
+.mk.hi .lab{top:84px}
+.mk .lab b{color:var(--ink);font-weight:500}
+.mk .lab small{font-size:inherit}
+/* below this the names start to touch; the numbers alone still read as a scale */
+@media (max-width:1000px){.mk .lab small{display:none}}
+.mk.you i{width:2px;top:26px;height:30px;background:var(--ink)}
+.mk.you .lab{top:6px;color:var(--ink);font-weight:600}
+.mk.you .lab b{font-weight:600}
+
+/* ── the table, with a severity gutter ───────────────────────────────────────
+   Every code tool draws marks in a left gutter — diffs, blame, linters. The
+   hatched column carries one tick per repo in the colour of its worst finding,
+   so scrolling the fleet gives a map of where the damage is. */
+.scroll{overflow:auto;max-height:min(62vh,580px);border-bottom:1px solid var(--line)}
 table{width:100%;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums}
-thead th{position:sticky;top:0;z-index:2;background:var(--surface);text-align:right;padding:9px var(--gutter) 9px 14px;font:500 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--mute);box-shadow:inset 0 -1px 0 var(--line);white-space:nowrap}
-thead th:first-child{text-align:left;padding-left:var(--gutter)}
+thead th{position:sticky;top:0;z-index:2;background:var(--surface);text-align:right;padding:10px 16px 9px;
+  font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--mute);
+  box-shadow:inset 0 -1px 0 var(--line);white-space:nowrap}
+thead th.gut{padding:0;width:30px;background:var(--surface)}
+thead th.nm{text-align:left;padding-left:14px}
 thead th:last-child{padding-right:var(--gutter)}
-tbody td{padding:13px var(--gutter) 13px 14px;border-bottom:1px solid var(--line);text-align:right;font-size:14px;color:var(--ink)}
-tbody td:first-child{text-align:left;padding-left:var(--gutter);max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+tbody td{padding:13px 16px;border-bottom:1px solid var(--line);text-align:right;font-size:14px;color:var(--ink)}
+tbody td.gut{width:30px;padding:0;border-right:1px solid var(--line);
+  background:repeating-linear-gradient(45deg,var(--line) 0 1px,transparent 1px 7px)}
+tbody td.gut span{display:block;width:3px;height:100%;min-height:22px}
+tbody td.nm{text-align:left;padding-left:14px;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 tbody td:last-child{padding-right:var(--gutter)}
-tbody tr:hover td{background:var(--surface)}
+tbody tr:hover td:not(.gut){background:var(--surface)}
 .repo{font-weight:600;color:var(--ink)}
 .repo:hover{text-decoration:underline;text-underline-offset:3px}
-.when{display:block;font:11.5px/1.5 var(--mono);color:var(--faint)}
+.when{display:block;font:11px/1.5 var(--mono);color:var(--faint)}
 td .zero{color:var(--faint)}
 td .hit{color:var(--high);font-weight:600}
 .trend{display:inline-block;margin-left:9px;vertical-align:middle}
 .act{display:flex;justify-content:flex-end}
 
-/* the study strip: bars drawn on the rule, your repos in ink */
-.bars{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:18px}
-.bars div{padding:14px var(--gutter);border-left:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
-.bars div:first-child{border-left:0}
-.bars span{font:500 11.5px/1 var(--mono);color:var(--mute);text-transform:lowercase}
-.bars b{font:500 22px/1 var(--display);letter-spacing:-.04em;color:var(--ink);font-variant-numeric:tabular-nums}
-.bars i{display:block;height:3px;background:var(--line-2)}
-.bars .you span,.bars .you b{color:var(--ink)}
-.bars .you span{font-weight:600}
-.bars .you i{background:var(--ink)}
-
-.empty{padding:44px var(--gutter) 52px;display:flex;flex-direction:column;align-items:flex-start;gap:12px;border-top:1px solid var(--line);margin-top:18px}
+.empty{padding:46px var(--gutter) 54px;display:flex;flex-direction:column;align-items:flex-start;gap:12px;border-bottom:1px solid var(--line)}
 .empty h3{font-size:19px}
 .empty p{margin:0;max-width:46ch;color:var(--mute);font-size:14px}
-footer{padding:28px var(--gutter) 40px;font:12.5px/1.6 var(--mono);color:var(--faint);display:flex;flex-wrap:wrap;gap:6px 20px}
-footer a{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-2)}
-@media (max-width:860px){.figures{grid-template-columns:repeat(2,minmax(0,1fr))}.fig:nth-child(3){border-left:0}.fig:nth-child(n+3){border-top:1px solid var(--line)}}
+footer{padding:26px var(--gutter) 44px;font:11px/1.8 var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--faint);display:flex;flex-wrap:wrap;gap:4px 22px}
+footer a:hover{color:var(--ink)}
+@media (max-width:880px){.figures{grid-template-columns:repeat(2,minmax(0,1fr))}.fig:nth-child(3){border-left:0}.fig:nth-child(n+3){border-top:1px solid var(--line)}.field{height:132px}}
 @media (max-width:560px){.figures{grid-template-columns:minmax(0,1fr)}.fig{border-left:0}.fig+.fig{border-top:1px solid var(--line)}}
 `;
 
@@ -314,6 +341,31 @@ function spark(values: number[]) {
   const [first, last] = [values[0], values.at(-1)!];
   const tone = last > first ? 'var(--high)' : last < first ? 'var(--good)' : 'var(--line-2)';
   return `<svg class="trend" width="54" height="14" viewBox="0 0 54 14" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${tone}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+const chap = (no: string, name: string, count: string) =>
+  `<div class="chap"><span class="no">${esc(no)}</span><span class="nm">${esc(name)}</span><span class="ln"></span><span class="ct">${esc(count)}</span></div>`;
+
+/** The scale: every author of the study notched, your repos struck through it in ink. */
+export function field(yours: number | null, authors: Record<string, { deletedPer100: number }>) {
+  const marks = [
+    ...Object.entries(authors).map(([name, a]) => ({ name: name === 'Human' ? 'humans' : name.toLowerCase(), v: Math.round(a.deletedPer100), you: false })),
+    ...(yours === null ? [] : [{ name: 'your repos', v: yours, you: true }]),
+  ].sort((a, b) => a.v - b.v);
+  const max = Math.ceil(Math.max(...marks.map((m) => m.v), 10) / 10) * 10;
+  // a label at either end would hang off the strip, so the outermost ones align inward
+  const place = (v: number) => {
+    const x = (v / max) * 100;
+    return `left:${x.toFixed(2)}%;${x > 88 ? 'transform:translateX(-100%)' : x < 6 ? '' : 'transform:translateX(-50%)'}`;
+  };
+  let depth = 0;
+  return `<div class="field"><div class="axis"></div><span class="end l">0</span><span class="end r">${max}</span>
+${marks
+    .map((m) => {
+      const cls = m.you ? 'you' : (depth = 1 - depth) ? 'lo' : 'hi';
+      return `<div class="mk ${cls}" style="left:${((m.v / max) * 100).toFixed(2)}%"><i></i><span class="lab" style="${place(m.v)}"><b>${m.v}</b> <small>${esc(m.name)}</small></span></div>`;
+    })
+    .join('')}</div>`;
 }
 
 function dashboard(db: any, me: Session, cfg: ReturnType<typeof config>, view = 'all') {
@@ -345,62 +397,57 @@ function dashboard(db: any, me: Session, cfg: ReturnType<typeof config>, view = 
     if (!withPrev.length) return '';
     const d = now - was;
     if (!d) return `<span class="delta same">no change</span>`;
-    const good = higherIsBetter ? d > 0 : d < 0;
-    return `<span class="delta ${good ? 'better' : 'worse'}">${d > 0 ? '+' : '−'}${num(Math.abs(d))}${unit}</span>`;
+    return `<span class="delta ${(higherIsBetter ? d > 0 : d < 0) ? 'better' : 'worse'}">${d > 0 ? '+' : '−'}${num(Math.abs(d))}${unit}</span>`;
   };
-  const fig = (label: string, value: string, foot: string) =>
-    `<div class="fig"><p class="eyebrow">${esc(label)}</p><p class="v">${value}</p><div class="foot">${foot}</div></div>`;
+  const fig = (value: string, label: string, foot: string) =>
+    `<div class="fig"><p class="v">${value}</p><p class="k">${esc(label)}<em>${foot}</em></p></div>`;
 
   const figures = scanned.length
     ? `<div class="figures">
-${fig('Repos clean', `${cleanNow}<u>%</u>`, `${delta(cleanNow, cleanWas, true, 'pts')}<em>${num(cleanRepos)} of ${num(scanned.length)} with no high findings</em>`)}
-${fig('High security', num(highNow), `${delta(highNow, highWas, false)}<em>across ${num(scanned.filter((r) => r.last.security.high).length)} repos</em>`)}
-${fig('Dead code', `${deadNow}<u>%</u>`, `${delta(deadNow, deadWas, false, 'pts')}<em>of ${num(sum(scanned, (r) => r.last.lines))} lines</em>`)}
-${fig('Deleted per 100 added', deletes === null ? '—' : num(deletes), `<em>${deletes === null ? 'needs a year of history' : `humans in the study delete ${humans}`}</em>`)}
+${fig(`${cleanNow}<u>%</u>`, 'Repos clean', `${delta(cleanNow, cleanWas, true, 'pts')} · ${num(cleanRepos)} of ${num(scanned.length)} with no high findings`)}
+${fig(num(highNow), 'High security', `${delta(highNow, highWas, false)} · across ${num(scanned.filter((r) => r.last.security.high).length)} repos`)}
+${fig(`${deadNow}<u>%</u>`, 'Dead code', `${delta(deadNow, deadWas, false, 'pts')} · of ${num(sum(scanned, (r) => r.last.lines))} lines`)}
+${fig(deletes === null ? '—' : num(deletes), 'Deleted per 100 added', deletes === null ? 'needs a year of history' : `humans in the study delete ${humans}`)}
 </div>`
     : '';
 
-  // table built for 100 rows: sticky head, long names truncate with a tooltip, numbers never do
-  const figure = (r: any, pick: (s: any) => number, trend = true) => {
+  // the table, built for 100 rows: sticky head, long names truncate with a tooltip, numbers never do
+  const cell = (r: any, pick: (s: any) => number, trend = true) => {
     if (!r.last) return '<td><span class="zero">—</span></td>';
     const v = pick(r.last) || 0;
     return `<td><span class="${v ? 'hit' : 'zero'}">${num(v)}</span>${trend ? spark(r.scans.map((s: any) => pick(s.summary) || 0)) : ''}</td>`;
   };
   const list = repos.filter((r) => shown(r.last));
   const rows = list
-    .map(
-      (r) => `<tr><td title="${esc(r.name)}"><a class="repo" href="${esc(cfg.web)}/${esc(r.name)}">${esc(r.name)}</a>
+    .map((r) => {
+      const tick = !r.last ? 'transparent' : r.last.security.high ? 'var(--high)' : r.last.blueprint ? 'var(--warn)' : r.last.zombie.lines ? 'var(--line-2)' : 'var(--good)';
+      return `<tr><td class="gut"><span style="background:${tick}"></span></td>
+<td class="nm" title="${esc(r.name)}"><a class="repo" href="${esc(cfg.web)}/${esc(r.name)}">${esc(r.name)}</a>
 <span class="when">${r.at ? `scanned ${esc(String(r.at).slice(0, 10))}` : 'waiting for the first push'}${r.weekly_at ? ` · cleaned ${esc(String(r.weekly_at).slice(0, 10))}` : ''}</span></td>
-${figure(r, (s) => s.security.high)}${figure(r, (s) => s.zombie.lines)}${figure(r, (s) => s.zombie.packages, false)}${figure(r, (s) => s.architecture.cycles + s.architecture.bigFiles, false)}${figure(r, (s) => s.blueprint || 0, false)}
-<td><div class="act"><form method="post" action="/repos/${r.id}/copilot"><button class="btn quiet">Hand to Copilot</button></form></div></td></tr>`,
-    )
+${cell(r, (s) => s.security.high)}${cell(r, (s) => s.zombie.lines)}${cell(r, (s) => s.zombie.packages, false)}${cell(r, (s) => s.architecture.cycles + s.architecture.bigFiles, false)}${cell(r, (s) => s.blueprint || 0, false)}
+<td><div class="act"><form method="post" action="/repos/${r.id}/copilot"><button class="btn quiet">Hand to Copilot</button></form></div></td></tr>`;
+    })
     .join('');
 
   const table = !repos.length
     ? `<div class="empty"><h3>No repos yet</h3><p>Install the app on a repository, then push to its default branch. The first scan lands within a minute and the trends build from there.</p>
 <a class="btn" href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">Install on a repo</a></div>`
     : !list.length
-      ? `<div class="empty"><h3>Nothing in this view</h3><p>No repo matches ${esc(viewLabel.toLowerCase())} right now.</p><a class="btn quiet" href="/">Show all repos</a></div>`
-      : `<div class="scroll"><table><thead><tr><th>Repo</th><th>High</th><th>Zombie lines</th><th>Packages</th><th>Architecture</th><th>Blueprint</th><th>Weekly clean-up</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-
-  const bars = [{ name: 'your repos', v: deletes, you: true }, ...Object.entries(study.authors).map(([name, a]) => ({ name: name === 'Human' ? 'humans' : name, v: Math.round(a.deletedPer100), you: false }))]
-    .filter((b) => b.v !== null)
-    .sort((a, b) => (b.v as number) - (a.v as number));
-  const max = Math.max(...bars.map((b) => b.v as number), 1);
-  const strip = scanned.length
-    ? `<div class="rule"><h2>Deleted per 100 added</h2><span class="count">${num(study.study.repos)} public repos</span></div>
-<p class="note">Lines deleted for every 100 added since October 2025, measured the same way in your repos and in the study.</p>
-<div class="bars">${bars.map((b) => `<div class="${b.you ? 'you' : ''}"><span>${esc(b.name)}</span><b>${b.v}</b><i style="width:${Math.round(((b.v as number) / max) * 100)}%"></i></div>`).join('')}</div>`
-    : '';
+      ? `<div class="empty"><h3>Nothing in this view</h3><p>No repo is ${esc(viewLabel.toLowerCase())} right now.</p><a class="btn quiet" href="/">Show all repos</a></div>`
+      : `<div class="scroll"><table><thead><tr><th class="gut"></th><th class="nm">Repo</th><th>High</th><th>Zombie lines</th><th>Packages</th><th>Architecture</th><th>Blueprint</th><th>Weekly clean-up</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 
   const views = VIEWS.map(([key, label]) => `<a class="${key === view ? 'on' : ''}" href="${key === 'all' ? '/' : `/?view=${key}`}">${esc(label)} <b>${num(counts[key])}</b></a>`).join('');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Repos · zomb</title>${FONTS}<style>${TOKENS}${DASH_CSS}</style></head><body>
-<div class="bar"><span class="word">zomb</span><span class="sep"></span><span class="eyebrow">cloud</span>
+<div class="bar"><span class="word">zomb</span><span class="eyebrow">cloud</span>
 <span class="who"><span>${esc(me.login)}</span><a href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">add repos</a><a href="/logout">sign out</a></span></div>
 <nav class="views">${views}</nav>
-<div class="rule"><h2>${esc(viewLabel)}</h2><span class="count">${num(list.length)} of ${num(repos.length)}</span></div>
-<p class="note">Figures come from the last scan of each default branch.</p>
-${figures}${table}${strip}
+${scanned.length ? `${chap('01', 'Standing', `${num(scanned.length)} scanned`)}${figures}` : ''}
+${chap('02', viewLabel, `${num(list.length)} of ${num(repos.length)}`)}
+<p class="note">Figures come from the last scan of each default branch. The gutter marks each repo with the colour of its worst finding.</p>
+${table}
+${scanned.length ? `${chap('03', 'The field', `${num(study.study.repos)} public repos`)}
+<p class="note">Lines deleted for every 100 added since October 2025, measured the same way in your repos and in the study.</p>
+${field(deletes, study.authors)}` : ''}
 <footer><span>zomb cloud</span><a href="${esc(study.study.url)}">the study</a><a href="https://github.com/Open-Dev-Society/zomb">docs</a></footer>
 </body></html>`;
 }
