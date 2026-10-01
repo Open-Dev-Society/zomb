@@ -4,16 +4,24 @@
   "description": "A health check for AI-written codebases: security holes, zombie code, sprawl and architecture.",
   "type": "module",
   "bin": {
-    "zomb": "src/bin.js"
+    "zomb": "dist/bin.js"
   },
   "files": [
-    "src"
+    "dist",
+    "src",
+    "hooks",
+    "skills",
+    "action.yml",
+    "tsconfig.json"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18"
   },
   "license": "MIT",
   "dependencies": {
@@ -28,10 +36,14 @@
       "jscpd"
     ],
     "entry": [
-      "src/bin.js",
+      "src/bin.ts",
       "cloud/server.js",
       "research/*.js",
       "test/*.test.js"
     ]
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/node": "^24.0.0"
   }
 }

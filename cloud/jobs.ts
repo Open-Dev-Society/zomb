@@ -6,10 +6,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { parse } from 'yaml';
-import { toMarkdown } from '../src/tasks.js';
-import { packageManager } from '../src/fix.js';
+import { toMarkdown } from '../src/tasks.ts';
+import { packageManager } from '../src/fix.ts';
+import type { Api } from './github.ts';
+import type { Task } from '../src/types.ts';
 
-const CLI = path.join(import.meta.dirname, '..', 'src', 'cli.js');
+type Result = { summary: Record<string, any>; failing: number; tasks: Task[]; baseline?: boolean };
+
+const CLI = path.join(import.meta.dirname, '..', 'src', 'cli.ts');
 const exec = promisify(execFile);
 const MARK = '<!-- zomb -->';
 const WEEKLY = '<!-- zomb-weekly -->';
@@ -18,13 +22,13 @@ const INSTALL = { npm: ['ci'], pnpm: ['install', '--frozen-lockfile'], yarn: ['i
 // Check out a repo into a fresh folder. The token is only ever in the fetch URL, never in .git/config,
 // and nothing the repo runs sees the server's environment.
 // ponytail: jobs are child processes of the server; give each its own container before scanning code you don't trust
-async function checkout(cloneUrl, token, refspecs, ref) {
+async function checkout(cloneUrl: string, token: string, refspecs: string[], ref: string) {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'zomb-cloud-')));
   const dir = path.join(root, 'repo');
   const env = { PATH: process.env.PATH, HOME: path.join(root, 'home'), CI: '1', NO_COLOR: '1', GIT_TERMINAL_PROMPT: '0' };
   await mkdir(dir);
   await mkdir(env.HOME);
-  const run = (cmd, args, timeout = 300_000) => exec(cmd, args, { cwd: dir, env, timeout, maxBuffer: 256 * 1024 * 1024 });
+  const run = (cmd: string, args: string[], timeout = 300_000) => exec(cmd, args, { cwd: dir, env, timeout, maxBuffer: 256 * 1024 * 1024 });
   try {
     const url = token && cloneUrl.startsWith('https://') ? cloneUrl.replace('https://', `https://x-access-token:${token}@`) : cloneUrl;
     await run('git', ['init', '-q']);
@@ -43,34 +47,34 @@ async function checkout(cloneUrl, token, refspecs, ref) {
 }
 
 // zomb --json on the checkout; --fail-on exits 1 but still prints the result
-async function scan(co, args) {
-  const out = await co.run(process.execPath, [CLI, co.dir, '--json', ...args]).then((r) => r.stdout, (e) => e.stdout);
+async function scan(co: { dir: string; run: (cmd: string, args: string[], timeout?: number) => Promise<{ stdout: string }> }, args: string[]): Promise<Result> {
+  const out = await co.run(process.execPath, [CLI, co.dir, '--json', ...args]).then((r) => r.stdout, (e: { stdout?: string }) => e.stdout);
   if (!out) throw new Error('zomb produced no result');
   return JSON.parse(out);
 }
 
-export function jobs({ gh, db, appId, log = console.error }) {
-  const record = (repo, sha, kind, result) =>
+export function jobs({ gh, db, appId, log = console.error }: { gh: any; db: any; appId?: string | number; log?: (s: string) => void }) {
+  const record = (repo: number | string, sha: string | null, kind: string, result: Result) =>
     db.prepare('INSERT INTO scans (repo, sha, kind, at, summary, failing, tasks) VALUES (?, ?, ?, ?, ?, ?, ?)').run(repo, sha, kind, new Date().toISOString(), JSON.stringify(result.summary), result.failing, result.tasks.length);
 
-  async function pullRequest({ repository: r, pull_request: pr, installation }) {
+  async function pullRequest({ repository: r, pull_request: pr, installation }: any) {
     const api = gh.as(installation.id);
     const check = await api('POST', `/repos/${r.full_name}/check-runs`, { name: 'zomb', head_sha: pr.head.sha, status: 'in_progress' });
-    const finish = (conclusion, title, summary) => api('PATCH', `/repos/${r.full_name}/check-runs/${check.id}`, { status: 'completed', conclusion, output: { title, summary: summary.slice(0, 60_000) } });
-    let co;
+    const finish = (conclusion: string, title: string, summary: string) => api('PATCH', `/repos/${r.full_name}/check-runs/${check.id}`, { status: 'completed', conclusion, output: { title, summary: summary.slice(0, 60_000) } });
+    let co: Awaited<ReturnType<typeof checkout>> | undefined;
     try {
       co = await checkout(r.clone_url, await gh.installationToken(installation.id), [`+refs/heads/${pr.base.ref}:refs/remotes/origin/${pr.base.ref}`, `+refs/pull/${pr.number}/head:refs/remotes/origin/pr`], 'origin/pr');
       const result = await scan(co, ['--since', `origin/${pr.base.ref}`, '--fail-on', co.config['fail-on']]);
       const body = toMarkdown(result.tasks, { repo: r.name, since: pr.base.ref, baseline: result.baseline });
       // one comment per PR, updated on every push
       const comments = await api('GET', `/repos/${r.full_name}/issues/${pr.number}/comments?per_page=100`);
-      const mine = comments.find((c) => c.body?.startsWith(MARK) && c.performed_via_github_app?.id === Number(appId));
+      const mine = comments.find((c: any) => c.body?.startsWith(MARK) && c.performed_via_github_app?.id === Number(appId));
       if (mine) await api('PATCH', `/repos/${r.full_name}/issues/comments/${mine.id}`, { body });
       else await api('POST', `/repos/${r.full_name}/issues/${pr.number}/comments`, { body });
       await finish(result.failing ? 'failure' : 'success', result.failing ? `${result.failing} new finding${result.failing === 1 ? '' : 's'} at or above ${co.config['fail-on']}` : 'Nothing new', body);
       record(r.id, pr.head.sha, 'pr', result);
     } catch (e) {
-      await finish('neutral', 'zomb could not scan this change', e.message).catch(() => {});
+      await finish('neutral', 'zomb could not scan this change', (e as Error).message).catch(() => {});
       throw e;
     } finally {
       await co?.cleanup();
@@ -78,7 +82,7 @@ export function jobs({ gh, db, appId, log = console.error }) {
   }
 
   // Pushes to the default branch feed the trends.
-  async function push({ repository: r, installation, ref, after }) {
+  async function push({ repository: r, installation, ref, after }: any) {
     if (ref !== `refs/heads/${r.default_branch}` || /^0+$/.test(after)) return;
     const co = await checkout(r.clone_url, await gh.installationToken(installation.id), [`+${ref}:refs/remotes/origin/${r.default_branch}`], `origin/${r.default_branch}`);
     try {
@@ -89,7 +93,7 @@ export function jobs({ gh, db, appId, log = console.error }) {
   }
 
   // The weekly clean-up: one issue with zomb's task list, kept up to date, handed to the team's agent.
-  async function weekly(repo) {
+  async function weekly(repo: any) {
     const api = gh.as(repo.installation);
     const [owner, name] = repo.name.split('/');
     const info = await api('GET', `/repos/${owner}/${name}`);
@@ -99,7 +103,7 @@ export function jobs({ gh, db, appId, log = console.error }) {
       if (co.config.weekly === false) return null;
       const result = await scan(co, []);
       record(repo.id, null, 'weekly', result);
-      const open = (await api('GET', `/repos/${repo.name}/issues?state=open&per_page=100`)).find((i) => i.body?.startsWith(WEEKLY) && !i.pull_request);
+      const open = (await api('GET', `/repos/${repo.name}/issues?state=open&per_page=100`)).find((i: any) => i.body?.startsWith(WEEKLY) && !i.pull_request);
       if (!result.tasks.length) {
         if (open) await api('PATCH', `/repos/${repo.name}/issues/${open.number}`, { state: 'closed', body: `${WEEKLY}\nNothing left to clean up. 🎉` });
         return null;
@@ -116,9 +120,9 @@ export function jobs({ gh, db, appId, log = console.error }) {
 }
 
 // The issue an agent (or a person) works from: the safe clean-up first, then what needs a decision.
-function weeklyBody(result, handoff, first) {
+function weeklyBody(result: Result, handoff: string, first: boolean) {
   const s = result.summary;
-  const line = (t) => `- [ ] **${t.title}**  \n  \`${t.where.replace(/`/g, "'")}\`: ${t.how}`;
+  const line = (t: Task) => `- [ ] **${t.title}**  \n  \`${t.where.replace(/`/g, "'")}\`: ${t.how}`;
   const safe = result.tasks.filter((t) => t.safe);
   const rest = result.tasks.filter((t) => !t.safe);
   const parts = [

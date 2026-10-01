@@ -166,10 +166,15 @@ A GitHub App version, self-hostable: a check and a comment on every PR without a
 
 ## Develop
 
+TypeScript, no build step in development: Node runs the `.ts` files directly (needs Node 22.18+).
+
 ```bash
 npm install
-npm test
-node src/cli.js ../some-repo
+npm test        # node --test
+npm run typecheck
+node src/cli.ts ../some-repo
 ```
+
+`npm run build` compiles `src/` to `dist/` for publishing, because Node will not strip types inside `node_modules`.
 
 MIT

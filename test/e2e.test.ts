@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const cli = path.join(import.meta.dirname, '..', 'src', 'cli.js');
+const cli = path.join(import.meta.dirname, '..', 'src', 'cli.ts');
 
 // Keys are assembled at runtime so this repo never contains a key-shaped string.
 const stripeKey = ['sk', 'live', 'Q7mZp2Lx9Rt4Vb8Nc1Hs6Kd3'].join('_');
@@ -63,7 +63,8 @@ test('zomb --json finds every planted mistake', () => {
       try {
         return { code: 0, out: execFileSync(process.execPath, [cli, dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) };
       } catch (e) {
-        return { code: e.status, out: e.stdout };
+        const fail = e as { status: number; stdout: string };
+        return { code: fail.status, out: fail.stdout };
       }
     };
     // zomb must not read its own report: it lists the dead files, which would make them look "mentioned" next run.

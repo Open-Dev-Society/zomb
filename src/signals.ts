@@ -7,16 +7,19 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { parseSync } from 'oxc-parser';
+import type { EcmaScriptModule } from 'oxc-parser';
 import { ResolverFactory } from 'oxc-resolver';
-import { surfacesOf, routeOf, packageOf } from './score.js';
-import { findDangerous, routeFacts } from './security.js';
+import { surfacesOf, routeOf, packageOf } from './score.ts';
+import { findDangerous, routeFacts } from './security.ts';
+import { truthy } from './types.ts';
+import type { Clone, Parsed } from './types.ts';
 
 // -> Map(path -> { imports, runtime, surfaces, exported, packages, lines, deep, dangerous, route })
 //   imports: every repo file it loads (static, dynamic, re-export); runtime: static non-type imports, for cycles
 //   packages: npm packages it imports; deep: ../../../ imports; dangerous/route: security facts from its source
 //   alias: path-alias prefixes it imports through ('@/'); fetch: whether it calls fetch()
 // ponytail: root tsconfig paths only; per-workspace tsconfigs if monorepo aliases go unresolved
-export async function parseAll(root, files) {
+export async function parseAll(root: string, files: string[]): Promise<Map<string, Parsed>> {
   const inRepo = new Set(files);
   const tsconfig = path.join(root, 'tsconfig.json');
   const resolver = new ResolverFactory({
@@ -25,44 +28,44 @@ export async function parseAll(root, files) {
     extensionAlias: { '.js': ['.ts', '.tsx', '.js', '.jsx'], '.mjs': ['.mts', '.mjs'], '.cjs': ['.cts', '.cjs'] },
     conditionNames: ['import', 'require', 'node', 'default'],
   });
-  const resolve = (file, spec) => {
+  const resolve = (file: string, spec: string) => {
     const hit = resolver.sync(path.dirname(path.join(root, file)), spec).path;
     const rel = hit && path.relative(root, hit);
     return rel && inRepo.has(rel) && rel !== file ? rel : null;
   };
-  const out = new Map();
+  const out = new Map<string, Parsed>();
   for (const file of files) {
     const src = await readFile(path.join(root, file), 'utf8').catch(() => '');
-    let mod = null;
+    let mod: EcmaScriptModule | null = null;
     try {
       mod = parseSync(file, src).module;
     } catch {}
     // type-only imports disappear at build time: they can't make a runtime cycle
-    const runtimeSpecs = mod
+    const runtimeSpecs: string[] = mod
       ? [
           ...mod.staticImports.filter((i) => !i.entries.length || i.entries.some((e) => !e.isType)).map((i) => i.moduleRequest.value),
-          ...mod.staticExports.flatMap((e) => e.entries.filter((x) => x.moduleRequest && !x.isType).map((x) => x.moduleRequest.value)),
+          ...mod.staticExports.flatMap((e) => e.entries.filter((x) => !x.isType).map((x) => x.moduleRequest?.value).filter(truthy)),
         ]
       : [];
-    const specs = mod
+    const specs: string[] = mod
       ? [
           ...mod.staticImports.map((i) => i.moduleRequest.value),
-          ...mod.staticExports.flatMap((e) => e.entries.map((x) => x.moduleRequest?.value)).filter(Boolean),
-          ...mod.dynamicImports.map((d) => src.slice(d.moduleRequest.start, d.moduleRequest.end).match(/^['"`]([^'"`$]+)['"`]$/)?.[1]).filter(Boolean),
+          ...mod.staticExports.flatMap((e) => e.entries.map((x) => x.moduleRequest?.value)).filter(truthy),
+          ...mod.dynamicImports.map((d) => src.slice(d.moduleRequest.start, d.moduleRequest.end).match(/^['"`]([^'"`$]+)['"`]$/)?.[1]).filter(truthy),
         ]
       : [];
-    const imports = [...new Set(specs.map((s) => resolve(file, s)).filter(Boolean))];
-    const runtime = [...new Set(runtimeSpecs.map((s) => resolve(file, s)).filter(Boolean))];
+    const imports = [...new Set(specs.map((s) => resolve(file, s)).filter(truthy))];
+    const runtime = [...new Set(runtimeSpecs.map((s) => resolve(file, s)).filter(truthy))];
     const surfaces = surfacesOf(specs, src);
     out.set(file, {
       imports,
       runtime,
       surfaces,
-      exported: mod ? mod.staticExports.flatMap((e) => e.entries.filter((x) => !x.moduleRequest && !x.isType && x.exportName.kind === 'Name').map((x) => x.exportName.name)) : [],
+      exported: mod ? mod.staticExports.flatMap((e) => e.entries.filter((x) => !x.moduleRequest && !x.isType && x.exportName.kind === 'Name').map((x) => x.exportName.name).filter(truthy)) : [],
       packages: [...new Set(specs.filter((s) => !/^[./~#]|^@\//.test(s) && !s.startsWith('node:') && !resolve(file, s)).map(packageOf))],
       lines: src ? src.split('\n').length : 0,
       deep: specs.filter((s) => /^(\.\.\/){3,}/.test(s)).length,
-      alias: [...new Set(specs.map((s) => s.match(/^[@~#]\//)?.[0]).filter(Boolean))],
+      alias: [...new Set(specs.map((s) => s.match(/^[@~#]\//)?.[0]).filter(truthy))],
       fetch: /(?<![\w.])fetch\s*\(/.test(src),
       main: /^#!|import\.meta\.url\s*===|require\.main\s*===\s*module/.test(src),
       dangerous: findDangerous(src, { shell: surfaces.includes('shell') }),
@@ -73,7 +76,7 @@ export async function parseAll(root, files) {
 }
 
 // path -> how many repo files import it, directly or through other files
-export function dependents(parsed) {
+export function dependents(parsed: Map<string, Parsed>): Map<string, number> {
   const importers = new Map();
   for (const [file, p] of parsed) for (const dep of p.imports) importers.set(dep, [...(importers.get(dep) || []), file]);
   const count = new Map();
@@ -89,7 +92,7 @@ export function dependents(parsed) {
 // A file touches what it imports directly, plus the capabilities of repo modules it imports (one hop: page -> lib/db -> pg).
 // Secrets, network and endpoints stay with the file that has them: importing a module that reads a key isn't handling it.
 const CARRIES = new Set(['payments', 'auth', 'database', 'shell']);
-export function touches(parsed) {
+export function touches(parsed: Map<string, Parsed>): Map<string, string[]> {
   const out = new Map();
   for (const [file, p] of parsed) out.set(file, [...new Set([...p.surfaces, ...p.imports.flatMap((d) => parsed.get(d)?.surfaces.filter((t) => CARRIES.has(t)) || [])])]);
   return out;
@@ -97,7 +100,7 @@ export function touches(parsed) {
 
 // Page/API routes that nothing in the repo links to or calls -> Map(path -> url).
 // ponytail: static search for the URL's fixed prefix; production traffic (cloud) is the real answer
-export async function orphanRoutes(root, files) {
+export async function orphanRoutes(root: string, files: string[]): Promise<Map<string, string>> {
   const out = new Map();
   // A repo with no pages besides a home page is an API for other apps: nothing inside it is supposed to call its routes.
   const hasPages = files.some((f) => routeOf(f)?.kind === 'page');
@@ -116,7 +119,7 @@ export async function orphanRoutes(root, files) {
 }
 
 // -> [{ a:{ file, start, end }, b:{ file, start, end }, lines }] copy-pasted blocks between tracked JS/TS files
-export async function clones(root, files) {
+export async function clones(root: string, files: string[]): Promise<Clone[] | null> {
   const inRepo = new Set(files);
   const bin = path.join(path.dirname(createRequire(import.meta.url).resolve('jscpd/package.json')), 'run-jscpd.js');
   const dir = await mkdtemp(path.join(tmpdir(), 'zomb-'));

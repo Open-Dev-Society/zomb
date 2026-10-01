@@ -7,10 +7,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { github, verify } from './github.js';
-import { jobs } from './jobs.js';
+import { github, verify } from './github.ts';
+import { jobs } from './jobs.ts';
 
-function config(env = process.env) {
+type Session = { id: string; login: string; token: string; installations: number[]; expires: number };
+
+function config(env: Record<string, string | undefined> = process.env) {
   const data = env.DATA_DIR || path.join(import.meta.dirname, 'data');
   // written by /setup when the app was created from its manifest; env vars win
   const saved = existsSync(path.join(data, 'app.json')) ? JSON.parse(readFileSync(path.join(data, 'app.json'), 'utf8')) : {};
@@ -30,34 +32,35 @@ function config(env = process.env) {
   };
 }
 
-export function start(cfg = config(), { log = console.error } = {}) {
+export function start(cfg: ReturnType<typeof config> = config(), { log = console.error }: { log?: (s: string) => void } = {}) {
   mkdirSync(cfg.data, { recursive: true });
   const db = new DatabaseSync(path.join(cfg.data, 'zomb.db'));
   db.exec(`CREATE TABLE IF NOT EXISTS repos (id INTEGER PRIMARY KEY, installation INTEGER NOT NULL, name TEXT NOT NULL, weekly_at TEXT);
     CREATE TABLE IF NOT EXISTS scans (id INTEGER PRIMARY KEY AUTOINCREMENT, repo INTEGER NOT NULL, sha TEXT, kind TEXT, at TEXT, summary TEXT, failing INTEGER, tasks INTEGER);
     CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, login TEXT, token TEXT, installations TEXT, expires INTEGER);`);
+  // built either way: they only make closures, and `ready` gates every call that needs real credentials
   const ready = Boolean(cfg.appId && cfg.privateKey && cfg.webhookSecret);
-  const gh = ready && github(cfg);
-  const work = ready && jobs({ gh, db, appId: cfg.appId, log });
+  const gh = github(cfg);
+  const work = jobs({ gh, db, appId: cfg.appId, log });
 
   // ponytail: in-memory queue, two jobs at a time; a restart drops queued jobs (the next push or week redoes them)
-  const queue = [];
+  const queue: [string, () => Promise<unknown>][] = [];
   let active = 0;
   const pump = () => {
     while (active < 2 && queue.length) {
-      const [label, fn] = queue.shift();
+      const [label, fn] = queue.shift()!;
       active++;
       fn()
         .catch((e) => log(`${label}: ${e.message}`))
         .finally(() => (active--, pump()));
     }
   };
-  const enqueue = (label, fn) => (queue.push([label, fn]), pump());
+  const enqueue = (label: string, fn: () => Promise<unknown>) => (queue.push([label, fn]), pump());
 
-  const addRepos = (installation, repos) => {
+  const addRepos = (installation: number, repos: { id: number; full_name: string }[]) => {
     for (const r of repos) db.prepare('INSERT INTO repos (id, installation, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET installation = excluded.installation, name = excluded.name').run(r.id, installation, r.full_name);
   };
-  function onEvent(event, p) {
+  function onEvent(event: string | string[] | undefined, p: any) {
     if (event === 'installation' && p.action === 'deleted') db.prepare('DELETE FROM repos WHERE installation = ?').run(p.installation.id);
     else if (event === 'installation' && p.repositories) addRepos(p.installation.id, p.repositories);
     else if (event === 'installation_repositories') {
@@ -69,36 +72,36 @@ export function start(cfg = config(), { log = console.error } = {}) {
 
   // every hour: repos whose weekly clean-up is due
   const weeklyDue = () => {
-    const due = db.prepare("SELECT * FROM repos WHERE weekly_at IS NULL OR datetime(weekly_at) < datetime('now', '-7 days')").all();
+    const due = db.prepare("SELECT * FROM repos WHERE weekly_at IS NULL OR datetime(weekly_at) < datetime('now', '-7 days')").all() as any[];
     for (const repo of due) enqueue(`${repo.name} weekly`, () => work.weekly(repo));
   };
-  const timer = ready && setInterval(weeklyDue, 3600_000);
+  const timer = ready ? setInterval(weeklyDue, 3600_000) : undefined;
 
   // ---------- sessions: GitHub sign-in, so people see only the repos their installations cover
-  const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';').map((c) => c.trim().split('=')).filter(([k]) => k));
+  const cookies = (req: { headers: Record<string, any> }): Record<string, string> => Object.fromEntries((req.headers.cookie || '').split(';').map((c) => c.trim().split('=')).filter(([k]) => k));
   const secure = cfg.url.startsWith('https') ? '; Secure' : '';
-  const session = (req) => {
-    const s = db.prepare('SELECT * FROM sessions WHERE id = ? AND expires > ?').get(cookies(req).zomb || '', Date.now());
-    return s && { ...s, installations: JSON.parse(s.installations) };
+  const session = (req: { headers: Record<string, any> }): Session | null => {
+    const s = db.prepare('SELECT * FROM sessions WHERE id = ? AND expires > ?').get(cookies(req).zomb || '', Date.now()) as any;
+    return s ? { ...s, installations: JSON.parse(s.installations) } : null;
   };
 
-  const send = (res, status, body, headers = {}) => (res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', ...headers }), res.end(body));
+  const send = (res: any, status: number, body: string, headers: Record<string, string> = {}) => (res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', ...headers }), res.end(body));
   const server = createServer(async (req, res) => {
-    const url = new URL(req.url, cfg.url);
+    const url = new URL(req.url || '/', cfg.url);
     try {
       if (req.method === 'POST' && url.pathname === '/webhook') {
-        const chunks = [];
+        const chunks: Buffer[] = [];
         for await (const c of req) chunks.push(c);
         const body = Buffer.concat(chunks);
         if (!ready || !verify(cfg.webhookSecret, body, req.headers['x-hub-signature-256'])) return send(res, 401, 'bad signature');
         send(res, 202, 'queued');
-        return onEvent(req.headers['x-github-event'], JSON.parse(body));
+        return onEvent(req.headers['x-github-event'], JSON.parse(body.toString()));
       }
       if (url.pathname === '/health') return send(res, 200, 'ok', { 'content-type': 'text/plain' });
       if (url.pathname === '/setup') return send(res, 200, setupPage(cfg, ready));
       if (url.pathname === '/setup/done') {
         if (ready) return send(res, 400, 'Already set up.');
-        const app = await fetch(`${cfg.api}/app-manifests/${encodeURIComponent(url.searchParams.get('code'))}/conversions`, { method: 'POST', headers: { accept: 'application/vnd.github+json' } }).then((r) => r.json());
+        const app = (await fetch(`${cfg.api}/app-manifests/${encodeURIComponent(url.searchParams.get('code') || '')}/conversions`, { method: 'POST', headers: { accept: 'application/vnd.github+json' } }).then((r) => r.json())) as any;
         if (!app.id) return send(res, 400, `GitHub said: ${app.message || 'no app'}`);
         writeFileSync(path.join(cfg.data, 'app.json'), JSON.stringify(app), { mode: 0o600 });
         return send(res, 200, page('Set up', `<h1>${esc(app.name)} is ready</h1><p>Restart the server to load it, then <a href="${esc(app.html_url)}/installations/new">install it on your repos</a>.</p>`));
@@ -110,7 +113,7 @@ export function start(cfg = config(), { log = console.error } = {}) {
       }
       if (url.pathname === '/callback') {
         if (!url.searchParams.get('state') || url.searchParams.get('state') !== cookies(req).zomb_state) return send(res, 400, 'Sign-in expired. <a href="/login">Try again</a>.');
-        const token = await gh.signIn(url.searchParams.get('code'));
+        const token = await gh.signIn(url.searchParams.get('code') || '');
         const user = gh.user(token);
         const me = await user('GET', '/user');
         const { installations } = await user('GET', '/user/installations?per_page=100');
@@ -127,35 +130,35 @@ export function start(cfg = config(), { log = console.error } = {}) {
       // hand the weekly issue to Copilot: Copilot only takes assignments from a person's token, so this is a click, not a cron
       const copilot = url.pathname.match(/^\/repos\/(\d+)\/copilot$/);
       if (copilot && req.method === 'POST' && me && req.headers.origin === new URL(cfg.url).origin) {
-        const repo = db.prepare('SELECT * FROM repos WHERE id = ?').get(Number(copilot[1]));
+        const repo = db.prepare('SELECT * FROM repos WHERE id = ?').get(Number(copilot[1])) as any;
         if (!repo || !me.installations.includes(repo.installation)) return send(res, 404, 'Not found');
-        const issue = (await gh.as(repo.installation)('GET', `/repos/${repo.name}/issues?state=open&per_page=100`)).find((i) => i.body?.startsWith('<!-- zomb-weekly -->'));
+        const issue = (await gh.as(repo.installation)('GET', `/repos/${repo.name}/issues?state=open&per_page=100`)).find((i: any) => i.body?.startsWith('<!-- zomb-weekly -->'));
         if (!issue) return send(res, 404, page('No issue', '<p>No open weekly clean-up issue yet. It is created on the next weekly run.</p>'));
         await gh.user(me.token)('POST', `/repos/${repo.name}/issues/${issue.number}/assignees`, { assignees: ['copilot-swe-agent[bot]'], agent_assignment: { target_repo: repo.name } });
         return send(res, 302, '', { location: '/' });
       }
       send(res, 404, page('Not found', '<p>Not found.</p>'));
     } catch (e) {
-      log(`${req.method} ${url.pathname}: ${e.message}`);
+      log(`${req.method} ${url.pathname}: ${(e as Error).message}`);
       if (!res.headersSent) send(res, 500, page('Error', '<p>Something went wrong.</p>'));
     }
   });
-  return new Promise((resolve) =>
+  return new Promise<any>((resolve) =>
     server.listen(cfg.port, () =>
       resolve({
-        port: server.address().port,
+        port: (server.address() as { port: number }).port,
         db,
-        weekly: (id) => work.weekly(db.prepare('SELECT * FROM repos WHERE id = ?').get(id)),
-        idle: () => new Promise((r) => { const t = setInterval(() => !active && !queue.length && (clearInterval(t), r()), 50); }),
-        close: () => (clearInterval(timer), db.close(), new Promise((r) => server.close(r))),
+        weekly: (id: number) => work.weekly(db.prepare('SELECT * FROM repos WHERE id = ?').get(id)),
+        idle: () => new Promise<void>((r) => { const t = setInterval(() => !active && !queue.length && (clearInterval(t), r()), 50); }),
+        close: () => (clearInterval(timer), db.close(), new Promise<void>((r) => server.close(() => r()))),
       }),
     ),
   );
 }
 
 // ---------- pages: server-rendered, no JavaScript
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const page = (title, body) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · zomb</title><style>
+const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const page = (title: string, body: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · zomb</title><style>
 :root{--bg:#fbfaf8;--fg:#1c1b19;--muted:#77726b;--line:#e6e2dc;--bad:#d4442e;--good:#3f9b62;--accent:#1c1b19}
 @media (prefers-color-scheme:dark){:root{--bg:#141413;--fg:#ecebe8;--muted:#9a958d;--line:#2c2b28;--bad:#ff6b55;--good:#5cc185;--accent:#ecebe8}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif}
@@ -167,26 +170,27 @@ td b{font-variant-numeric:tabular-nums}.bad{color:var(--bad)}.good{color:var(--g
 header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
 </style></head><body><main>${body}</main></body></html>`;
 
-function landing(cfg) {
+function landing(cfg: ReturnType<typeof config>) {
   return page('zomb', `<h1>zomb</h1><p class="muted">A health check on every pull request, trends across your repos, and a weekly clean-up your agent does.</p>
 <p><a class="btn" href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">Install on GitHub</a> &nbsp; <a href="/login">Sign in</a></p>`);
 }
 
 // a tiny line chart of one number over the last scans; higher is worse for everything shown
-function spark(values) {
+function spark(values: number[]) {
   if (values.length < 2) return '<span class="muted">–</span>';
   const max = Math.max(...values, 1);
   const pts = values.map((v, i) => `${(i / (values.length - 1)) * 96 + 2},${22 - (v / max) * 20}`).join(' ');
-  const tone = values.at(-1) > values[0] ? 'var(--bad)' : values.at(-1) < values[0] ? 'var(--good)' : 'var(--muted)';
+  const [first, last] = [values[0], values.at(-1)!];
+  const tone = last > first ? 'var(--bad)' : last < first ? 'var(--good)' : 'var(--muted)';
   return `<svg width="100" height="24" viewBox="0 0 100 24" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${tone}" stroke-width="1.5"/></svg>`;
 }
 
-function dashboard(db, me, cfg) {
-  const repos = db.prepare(`SELECT * FROM repos WHERE installation IN (${me.installations.map(() => '?').join(',') || 'NULL'}) ORDER BY name`).all(...me.installations);
+function dashboard(db: any, me: Session, cfg: ReturnType<typeof config>) {
+  const repos = db.prepare(`SELECT * FROM repos WHERE installation IN (${me.installations.map(() => '?').join(',') || 'NULL'}) ORDER BY name`).all(...me.installations) as any[];
   const rows = repos.map((r) => {
-    const scans = db.prepare("SELECT * FROM scans WHERE repo = ? AND kind != 'pr' ORDER BY id DESC LIMIT 12").all(r.id).reverse().map((s) => ({ ...s, summary: JSON.parse(s.summary) }));
+    const scans = (db.prepare("SELECT * FROM scans WHERE repo = ? AND kind != 'pr' ORDER BY id DESC LIMIT 12").all(r.id) as any[]).reverse().map((s) => ({ ...s, summary: JSON.parse(s.summary) }));
     const last = scans.at(-1)?.summary;
-    const cell = (pick) => (last ? `<td><b class="${pick(last) ? 'bad' : ''}">${(pick(last) || 0).toLocaleString('en-US')}</b>${spark(scans.map((s) => pick(s.summary) || 0))}</td>` : '<td class="muted">–</td>');
+    const cell = (pick: (s: any) => number) => (last ? `<td><b class="${pick(last) ? 'bad' : ''}">${(pick(last) || 0).toLocaleString('en-US')}</b>${spark(scans.map((s) => pick(s.summary) || 0))}</td>` : '<td class="muted">–</td>');
     return `<tr><td><a href="${esc(cfg.web)}/${esc(r.name)}">${esc(r.name)}</a><br><span class="muted">${scans.length ? `scanned ${esc(scans.at(-1).at.slice(0, 10))}` : 'waiting for the first push'}</span></td>
 ${cell((s) => s.security.high)}${cell((s) => s.zombie.lines)}${cell((s) => s.zombie.packages)}${cell((s) => s.architecture.cycles + s.architecture.bigFiles)}${cell((s) => s.blueprint || 0)}
 <td><form method="post" action="/repos/${r.id}/copilot"><button class="btn ghost">Hand to Copilot</button></form></td></tr>`;
@@ -197,7 +201,7 @@ ${rows.join('') || '<tr><td colspan="7" class="muted">No repos yet. Install the 
 }
 
 // Create the GitHub App from a manifest: one click on GitHub, and the credentials come back here.
-function setupPage(cfg, ready) {
+function setupPage(cfg: ReturnType<typeof config>, ready: boolean) {
   if (ready) return page('Set up', '<h1>Already set up</h1><p><a href="/">Go to the dashboard</a></p>');
   const manifest = {
     name: 'zomb',

@@ -1,28 +1,30 @@
 // The terminal summary. Fits the window: nothing wraps, long paths shorten from the left, numbers line up on the right.
+import type { Month, Rule, ScanData, Severity, Task } from './types.ts';
+
 const ANSI = /\x1b\[[0-9;]*m/g;
-export const visible = (s) => String(s).replace(ANSI, '').length;
+export const visible = (s: unknown) => String(s).replace(ANSI, '').length;
 
 // One look for every zomb command: colors, badges, section rules, a header frame, and rows that fit the window.
-export function ui({ width = 80, color = true, all = false } = {}) {
+export function ui({ width = 80, color = true, all = false }: { width?: number; color?: boolean; all?: boolean } = {}) {
   // capped at 80: on a wide window, numbers pushed far right are hard to match to their file
   const W = Math.max(48, Math.min(width - 1, 80));
-  const paint = (code) => (s) => (color ? `\x1b[${code}m${s}\x1b[0m` : String(s));
+  const paint = (code: number | string) => (s: unknown) => (color ? `\x1b[${code}m${s}\x1b[0m` : String(s));
   const [bold, dim, red, yellow, green, cyan] = [paint(1), paint(2), paint(31), paint(33), paint(32), paint(36)];
   const badge = { high: paint('1;41;97'), medium: paint('1;43;30'), low: paint('2;7') };
-  const n = (x) => x.toLocaleString('en-US');
-  const plural = (k, word) => `${n(k)} ${word}${k === 1 ? '' : 's'}`;
+  const n = (x: number) => x.toLocaleString('en-US');
+  const plural = (k: number, word: string) => `${n(k)} ${word}${k === 1 ? '' : 's'}`;
   // a path that must fit in `w` columns loses its start, never its file name
-  const fit = (s, w) => (visible(s) <= w ? s : `…${s.slice(-(w - 1))}`);
+  const fit = (s: string, w: number) => (visible(s) <= w ? s : `…${s.slice(-(w - 1))}`);
   // left text + right text on one line, left shortened to make room
-  const row = (left, right = '', indent = 2) => {
+  const row = (left: string, right = '', indent = 2) => {
     const room = W - indent - visible(right) - (right ? 2 : 0);
     const l = visible(left) > room ? fit(left.replace(ANSI, ''), room) : left;
     return right ? `${' '.repeat(indent)}${l}${' '.repeat(Math.max(room - visible(l), 0) + 2)}${right}` : `${' '.repeat(indent)}${l}`;
   };
   // words that wrap onto indented lines instead of running off the edge
-  const wrap = (label, words, indent = 2) => {
+  const wrap = (label: string, words: string[], indent = 2) => {
     const pad = ' '.repeat(indent + visible(label) + 1);
-    const lines = [];
+    const lines: string[] = [];
     let cur = `${' '.repeat(indent)}${label} `;
     for (let w of words) {
       if (visible(cur) + visible(w) + 3 > W && visible(cur) > pad.length) (lines.push(cur.trimEnd()), (cur = pad));
@@ -32,22 +34,26 @@ export function ui({ width = 80, color = true, all = false } = {}) {
     }
     return [...lines, cur];
   };
-  const rule = (title, right = '') => `${bold(title)} ${dim('─'.repeat(Math.max(W - visible(title) - visible(right) - (right ? 2 : 1), 1)))}${right ? ` ${right}` : ''}`;
-  const more = (list, k = 5) => (!all && list.length > k ? [dim(`  …and ${n(list.length - k)} more  (zomb --all)`)] : []);
+  const rule = (title: string, right = '') => `${bold(title)} ${dim('─'.repeat(Math.max(W - visible(title) - visible(right) - (right ? 2 : 1), 1)))}${right ? ` ${right}` : ''}`;
+  const more = (list: unknown[], k = 5) => (!all && list.length > k ? [dim(`  …and ${n(list.length - k)} more  (zomb --all)`)] : []);
   // the rounded header box: a title line with something on the right, then rows under a divider
-  const frame = (title, meta = '', rows = []) => {
-    const line = (s) => `${dim('│')} ${s}${' '.repeat(Math.max(W - 4 - visible(s), 0))} ${dim('│')}`;
+  const frame = (title: string, meta = '', rows: string[] = []) => {
+    const line = (s: string) => `${dim('│')} ${s}${' '.repeat(Math.max(W - 4 - visible(s), 0))} ${dim('│')}`;
     const top = visible(title) + visible(meta) + 2 <= W - 4 ? `${title}${' '.repeat(W - 4 - visible(title) - visible(meta))}${meta}` : title;
     return [dim(`╭${'─'.repeat(W - 2)}╮`), line(top), ...(rows.length ? [dim(`├${'─'.repeat(W - 2)}┤`), ...rows.map(line)] : []), dim(`╰${'─'.repeat(W - 2)}╯`)];
   };
   return { W, paint, bold, dim, red, yellow, green, cyan, badge, n, plural, fit, row, wrap, rule, more, frame };
 }
 
-export function render(data, tasks, { width = 80, color = true, all = false, audit = {}, knipError, recent = [], out, failing = [], failOn, baseline } = {}) {
+export function render(
+  data: ScanData,
+  tasks: Task[],
+  { width = 80, color = true, all = false, audit = {}, knipError, recent = [], out, failing = [], failOn, baseline }: { width?: number; color?: boolean; all?: boolean; audit?: ScanData['security']['audit']; knipError?: string; recent?: Month[]; out?: string; failing?: unknown[]; failOn?: string; baseline?: unknown } = {},
+): string[] {
   const { W, bold, dim, red, yellow, green, cyan, badge, n, plural, fit, row, wrap, rule, more, frame } = ui({ width, color, all });
-  const cap = (list, k = 5) => (all ? list : list.slice(0, k));
+  const cap = <T>(list: T[], k = 5) => (all ? list : list.slice(0, k));
 
-  const L = [];
+  const L: string[] = [];
   const sec = data.security.findings;
   const high = sec.filter((f) => f.severity === 'high').length;
   const z = data.zombie;
@@ -63,7 +69,7 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
     ...(data.blueprint ? [['blueprint', data.blueprint.broken.length ? `${plural(data.blueprint.broken.length, 'rule break')}` : 'followed', data.blueprint.broken.length ? 'bad' : 'ok']] : []),
     ...(data.shortcuts ? [['shortcuts', data.shortcuts.length ? plural(data.shortcuts.length, 'place') : 'none', data.shortcuts.some((c) => c.severity !== 'low') ? 'warn' : 'ok']] : []),
     ['zombie code', knipError ? 'skipped' : zLines ? `${n(zLines)} lines · ${plural(z.files.length, 'file')}` : 'none', knipError ? 'warn' : zLines ? 'warn' : 'ok'],
-    ['sprawl', [sp.overlaps.length && plural(sp.overlaps.length, 'library overlap'), sp.dupes?.length && plural(sp.dupes.length, 'copy-paste'), sp.versions.length && plural(sp.versions.length, 'versioned copy', 'versioned copies').replace('copys', 'copies')].filter(Boolean).join(' · ') || 'none', sp.overlaps.length || sp.dupes?.length || sp.versions.length ? 'warn' : 'ok'],
+    ['sprawl', [sp.overlaps.length && plural(sp.overlaps.length, 'library overlap'), sp.dupes?.length && plural(sp.dupes.length, 'copy-paste'), sp.versions.length && plural(sp.versions.length, 'versioned copy').replace('copys', 'copies')].filter(Boolean).join(' · ') || 'none', sp.overlaps.length || sp.dupes?.length || sp.versions.length ? 'warn' : 'ok'],
     ['architecture', [plural(a.cycles.length, 'cycle'), a.big.length && `${n(a.big.length)} over 500 lines`].filter(Boolean).join(' · '), a.cycles.length ? 'warn' : a.big.length ? 'warn' : 'ok'],
   ];
   const title = `${bold('zomb')}  ${data.repo}`;
@@ -103,7 +109,7 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
   if (knipError) L.push('', rule('ZOMBIE CODE', yellow('skipped')), row(dim(fit(knipError, W - 2))));
   else if (z.files.length || z.packages.length || z.maybe.length) {
     L.push('', rule('ZOMBIE CODE', `${bold(n(zLines))} ${dim('lines')}`));
-    const groups = new Map();
+    const groups = new Map<string, ScanData['zombie']['files']>();
     for (const f of z.files) {
       const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/') + 1) : './';
       groups.set(dir, [...(groups.get(dir) || []), f]);
@@ -125,7 +131,7 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
   }
 
   // ── sprawl
-  const sprawlRows = [];
+  const sprawlRows: string[] = [];
   for (const o of sp.overlaps) sprawlRows.push(...wrap(dim(o.job.padEnd(14)), o.libraries.map((l) => `${l.name} ${dim(n(l.files))}`)));
   for (const v of cap(sp.versions)) sprawlRows.push(row(v.path, dim(v.original ? 'has original' : v.files ? plural(v.files, 'file') : 'copy')));
   for (const x of cap(sp.names)) sprawlRows.push(row(x.name, dim(`defined ${x.files.length}×`)));
@@ -159,7 +165,11 @@ export function render(data, tasks, { width = 80, color = true, all = false, aud
 }
 
 // `zomb blueprint`: the proposed rules with their evidence, what breaks them today, and how to save them.
-export function renderBlueprint(rules, today, { repo, width = 80, color = true, exists = false, write = false, file = '.zomb/blueprint.yml' }) {
+export function renderBlueprint(
+  rules: Rule[],
+  today: { file: string; rule: string; why: string }[],
+  { repo, width = 80, color = true, exists = false, write = false, file = '.zomb/blueprint.yml' }: { repo: string; width?: number; color?: boolean; exists?: boolean; write?: boolean; file?: string },
+): string {
   const { W, bold, dim, yellow, green, cyan, n, plural, row, rule, frame } = ui({ width, color });
   const TITLES = { libraries: 'one library per job', folders: 'where new files go', naming: 'how files are named', imports: 'no ../../../', api: 'routes that change data', files: 'size limit' };
   const L = ['', ...frame(`${bold('zomb blueprint')}  ${repo}`, dim(plural(rules.length, 'rule')), [dim('the rules this code already follows, for you to approve')])];
@@ -192,10 +202,10 @@ export function renderBlueprint(rules, today, { repo, width = 80, color = true, 
 }
 
 // A one-line spinner on stderr while the scan runs; silent when stderr isn't a terminal.
-export function spinner(label) {
+export function spinner(label: string) {
   if (!process.stderr.isTTY) return { step: () => {}, stop: () => {} };
   const frames = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
-  const done = [];
+  const done: string[] = [];
   let i = 0;
   const draw = () => {
     const text = `${label}${done.length ? ` · ${done.join(' · ')}` : ''}`.slice(0, (process.stderr.columns || 80) - 3);

@@ -3,12 +3,13 @@ import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { isTest, packageOf } from './score.js';
+import { isTest, packageOf } from './score.ts';
+import type { ScanData, Severity, Shortcut } from './types.ts';
 
 const CODE = /\.[cm]?[jt]sx?$/;
 
 // Added lines that silence a check instead of fixing what it found.
-const ADDED = [
+const ADDED: [Severity, string, RegExp, string?][] = [
   ['high', 'Focuses one test, so CI silently skips the rest', /\b(?:it|test|describe)\.only\(|\b(?:fit|fdescribe)\(/, 'test'],
   ['medium', 'Skips a test', /\b(?:it|test|describe)\.(?:skip|todo)\(|\b(?:xit|xtest|xdescribe)\(/, 'test'],
   ['medium', 'Silences the type checker', /@ts-(?:ignore|nocheck|expect-error)/],
@@ -19,17 +20,17 @@ const ADDED = [
 ];
 
 // One added line -> the shortcuts it takes [{ severity, kind }]. Comments only count when they are a suppression.
-export function lineShortcuts(text, file) {
+export function lineShortcuts(text: string, file: string): Pick<Shortcut, 'severity' | 'kind'>[] {
   if (/^\s*(\/\/|\*|\/\*)/.test(text) && !/@ts-|eslint-disable|biome-ignore|oxlint-disable/.test(text)) return [];
   const test = isTest(file);
   return ADDED.filter(([, , re, where]) => (!where || (where === 'test') === test) && re.test(text)).map(([severity, kind]) => ({ severity, kind }));
 }
 
 // `git diff -U0` text -> [{ severity, kind, file, line }] plus per-file counts of removed tests and assertions.
-export function shortcuts(diffText, deletedFiles = []) {
-  const out = [];
-  const counts = new Map(); // file -> { tests, asserts } net removed
-  let file = null;
+export function shortcuts(diffText: string, deletedFiles: string[] = []): Shortcut[] {
+  const out: Shortcut[] = [];
+  const counts = new Map<string, { tests: number; asserts: number }>(); // net removed per file
+  let file: string | null = null;
   let line = 0;
   for (const raw of diffText.split('\n')) {
     if (raw.startsWith('+++ ')) {
@@ -66,11 +67,11 @@ function bump(counts, file, text, by) {
 }
 
 // Packages whose last import a diff removed: they became unused because of this change.
-export const removedImports = (diffText) =>
+export const removedImports = (diffText: string): Set<string> =>
   new Set([...diffText.matchAll(/^-.*\b(?:from\s+|import\s+|require\()['"]([^'"./][^'"]*)['"]/gm)].map((m) => packageOf(m[1])));
 
 // -> { changed:Set, deleted:[], diff, base } for everything that differs from `ref` (committed, staged, unstaged, new files).
-export async function changesSince(root, ref) {
+export async function changesSince(root: string, ref: string) {
   const git = (...args) => promisify(execFile)('git', args, { cwd: root, maxBuffer: 256 * 1024 * 1024 }).then((r) => r.stdout);
   // a PR is compared with where it branched off, not with whatever landed on main since
   const base = (await git('merge-base', ref, 'HEAD').catch(() => ref)).trim();
@@ -93,7 +94,7 @@ export async function changesSince(root, ref) {
 
 // Narrow a full scan to what this change touched. The scan still reads the whole repo (usage needs the whole graph).
 // ponytail: a file made dead by removing its last importer elsewhere isn't caught yet; compare against a scan of the base
-export function scopeTo(data, { changed, diff }) {
+export function scopeTo(data: ScanData, { changed, diff }: { changed: Set<string>; diff: string }): ScanData {
   const touched = (f) => changed.has(f);
   const pkgChanged = [...changed].some((f) => /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/.test(f));
   const dropped = removedImports(diff);
@@ -114,7 +115,7 @@ export function scopeTo(data, { changed, diff }) {
       versions: data.sprawl.versions.filter((v) => (v.files ? inFolder(v.path) : touched(v.path))),
       overlaps: pkgChanged ? data.sprawl.overlaps : [],
     },
-    blueprint: data.blueprint && { broken: data.blueprint.broken.filter((b) => touched(b.file)) },
+    blueprint: data.blueprint && { broken: data.blueprint.broken.filter((b) => touched(b.file || '')) },
     architecture: {
       cycles: data.architecture.cycles.filter((c) => c.some(touched)),
       big: data.architecture.big.filter((b) => touched(b.file)),

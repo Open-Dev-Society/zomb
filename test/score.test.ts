@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isAgent, parseBlame, testsOnly, routeOf, growth, versionSprawl, overlaps, sameNames, cycles, sharedFolders, namingStyles } from '../src/score.js';
-import { findSecrets, publicSecretNames, findDangerous, routeFacts, openRoute, envValues, isEnvFile, securityFindings } from '../src/security.js';
+import type { ScanData, Task } from '../src/types.ts';
+import { isAgent, parseBlame, testsOnly, routeOf, growth, versionSprawl, overlaps, sameNames, cycles, sharedFolders, namingStyles } from '../src/score.ts';
+import { findSecrets, publicSecretNames, findDangerous, routeFacts, openRoute, envValues, isEnvFile, securityFindings } from '../src/security.ts';
 
 test('isAgent spots agents, not humans who share a name', () => {
   assert.ok(isAgent('Claude Opus 5 <noreply@anthropic.com>'));
@@ -32,7 +33,7 @@ test('testsOnly: files kept alive only by their tests, unless something starts t
 test('routeOf turns Next.js route files into URLs and skips ones outside services call', () => {
   assert.deepEqual(routeOf('app/(marketing)/old-pricing/page.tsx'), { url: '/old-pricing', prefix: '/old-pricing', kind: 'page' });
   assert.deepEqual(routeOf('src/app/api/users/[id]/route.ts'), { url: '/api/users/[id]', prefix: '/api/users', kind: 'api' });
-  assert.equal(routeOf('pages/blog/index.tsx').url, '/blog');
+  assert.equal(routeOf('pages/blog/index.tsx')!.url, '/blog');
   assert.equal(routeOf('app/page.tsx'), null);
   assert.equal(routeOf('app/api/stripe/webhook/route.ts'), null);
   assert.equal(routeOf('src/lib/db.ts'), null);
@@ -115,12 +116,12 @@ test('env files and ranking', () => {
   assert.equal(env(true).severity, 'high');
   assert.equal(env(false).title, '.env file not in .gitignore');
   assert.equal(envValues('A=1\nB=\n# C=3\nexport D="x"\n'), 2);
-  const f = securityFindings({ secrets: [], envFiles: [], publicVars: [], dangerous: [{ severity: 'medium', kind: 'eval', file: 'a.ts', line: 1 }], openRoutes: [], audit: { top: [{ name: 'next', severity: 'critical', title: 'SSRF', fix: true }], counts: { critical: 1, high: 0 } } });
+  const f = securityFindings({ secrets: [], envFiles: [], publicVars: [], dangerous: [{ severity: 'medium', kind: 'eval', file: 'a.ts', line: 1 }], openRoutes: [], audit: { top: [{ name: 'next', severity: 'critical', title: 'SSRF', fix: true, direct: true }], counts: { critical: 1, high: 0 } } });
   assert.deepEqual(f.map((x) => x.severity), ['high', 'medium']);
 });
 
 test('shortcuts: suppressions, skipped and focused tests, removed tests, test-env branches', async () => {
-  const { shortcuts, removedImports } = await import('../src/diff.js');
+  const { shortcuts, removedImports } = await import('../src/diff.ts');
   const diff = [
     'diff --git a/src/pay.ts b/src/pay.ts', '--- a/src/pay.ts', '+++ b/src/pay.ts', '@@ -10,0 +11,4 @@',
     '+  // @ts-ignore', '+  const total = (cart as any).sum;', "+  if (process.env.NODE_ENV === 'test') return 0;", '+  // this used to be as any',
@@ -142,26 +143,26 @@ test('shortcuts: suppressions, skipped and focused tests, removed tests, test-en
 });
 
 test('fingerprints ignore line numbers and counts; markdown shows only new findings', async () => {
-  const { fingerprint, toMarkdown } = await import('../src/tasks.js');
-  const t = (title, where) => ({ area: 'security', action: 'fix', severity: 'high', title, where });
+  const { fingerprint, toMarkdown } = await import('../src/tasks.ts');
+  const t = (title: string, where: string) => ({ area: 'security' as const, action: 'fix', severity: 'high' as const, title, where });
   assert.equal(fingerprint(t('Stripe live key in the code', 'lib/pay.ts:12')), fingerprint(t('Stripe live key in the code', 'lib/pay.ts:40')));
   assert.equal(fingerprint(t('Delete a.ts (301 lines)', 'a.ts')), fingerprint(t('Delete a.ts (310 lines)', 'a.ts')));
   assert.notEqual(fingerprint(t('Stripe live key in the code', 'lib/pay.ts:12')), fingerprint(t('Stripe live key in the code', 'lib/other.ts:12')));
-  const md = toMarkdown([{ ...t('New key', 'x.ts:1'), new: true }, { ...t('Old key', 'y.ts:1'), new: false }], { baseline: true, since: 'main' });
+  const md = toMarkdown([{ ...t('New key', 'x.ts:1'), new: true }, { ...t('Old key', 'y.ts:1'), new: false }] as unknown as Task[], { baseline: true, since: 'main' });
   assert.match(md, /1 new finding in this change/);
   assert.ok(md.includes('New key') && !md.includes('Old key'));
   assert.match(toMarkdown([], { since: 'main' }), /nothing new/);
 });
 
 test('scopeTo keeps only what the change touched', async () => {
-  const { scopeTo } = await import('../src/diff.js');
+  const { scopeTo } = await import('../src/diff.ts');
   const data = {
     zombie: { files: [{ path: 'a.ts' }, { path: 'b.ts' }], packages: [{ name: 'moment' }, { name: 'lodash' }], exports: [], maybe: [] },
     security: { findings: [{ files: ['a.ts'] }, { files: ['c.ts'] }, { package: true, files: [] }] },
     sprawl: { dupes: [], names: [], versions: [], overlaps: [{ job: 'x' }] },
     architecture: { cycles: [['a.ts', 'z.ts'], ['q.ts', 'r.ts']], big: [], deep: [], shared: ['lib'], naming: [] },
   };
-  const s = scopeTo(data, { changed: new Set(['a.ts']), diff: "-import moment from 'moment';" });
+  const s = scopeTo(data as unknown as ScanData, { changed: new Set(['a.ts']), diff: "-import moment from 'moment';" });
   assert.deepEqual(s.zombie.files, [{ path: 'a.ts' }]);
   assert.deepEqual(s.zombie.packages, [{ name: 'moment' }]);
   assert.equal(s.security.findings.length, 1);
@@ -170,7 +171,7 @@ test('scopeTo keeps only what the change touched', async () => {
 });
 
 test('terminal output never wraps, at any width', async () => {
-  const { render, visible } = await import('../src/terminal.js');
+  const { render, visible } = await import('../src/terminal.ts');
   const long = 'src/components/features/dashboard/analytics/really-long-folder-name/SomeVeryLongComponentName.tsx';
   const data = {
     repo: 'a-repo-with-a-fairly-long-name', files: 1234, lines: 123456,
@@ -182,7 +183,7 @@ test('terminal output never wraps, at any width', async () => {
   };
   const tasks = [{ safe: true }, { safe: false }];
   for (const width of [50, 60, 80, 120]) {
-    const lines = render(data, tasks, { width, color: true, all: true, recent: [{ added: 34628, deleted: 15120 }], out: `/Users/someone/projects/${long}/.zomb/report.html`, failOn: 'high', failing: [1] });
+    const lines = render(data as unknown as ScanData, tasks as Task[], { width, color: true, all: true, recent: [{ month: '2026-09', added: 34628, deleted: 15120 }], out: `/Users/someone/projects/${long}/.zomb/report.html`, failOn: 'high', failing: [1] });
     const widest = Math.max(...lines.map(visible));
     assert.ok(widest <= Math.max(48, Math.min(width - 1, 80)), `width ${width}: a line is ${widest} columns`);
     assert.ok(lines.every((l) => !/ $/.test(l.replace(/\x1b\[[0-9;]*m/g, ''))), 'no trailing spaces');

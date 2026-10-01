@@ -5,9 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { findChecks, packageManager, isTooling } from '../src/fix.js';
+import { findChecks, packageManager, isTooling } from '../src/fix.ts';
 
-const cli = path.join(import.meta.dirname, '..', 'src', 'cli.js');
+const cli = path.join(import.meta.dirname, '..', 'src', 'cli.ts');
 
 test('findChecks picks the project checks, cheapest first, and skips the npm placeholder test', () => {
   const checks = findChecks({ build: 'next build', test: 'echo "Error: no test specified" && exit 1', lint: 'eslint .', 'type-check': 'tsc --noEmit' }, 'pnpm');
@@ -45,7 +45,8 @@ test('zomb fix deletes dead code on a branch and keeps what a check proves is ne
       try {
         return { code: 0, out: execFileSync(process.execPath, [cli, 'fix', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) };
       } catch (e) {
-        return { code: e.status, out: `${e.stdout}${e.stderr}` };
+        const fail = e as { status: number; stdout: string; stderr: string };
+        return { code: fail.status, out: `${fail.stdout}${fail.stderr}` };
       }
     };
 

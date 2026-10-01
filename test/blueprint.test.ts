@@ -6,10 +6,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parse } from 'yaml';
-import { infer, toRules, breaks, toYaml } from '../src/blueprint.js';
-import { check } from '../src/guard.js';
+import { infer, toRules, breaks, toYaml } from '../src/blueprint.ts';
+import { check } from '../src/guard.ts';
 
-const file = (packages = [], extra = {}) => ({ packages, deep: 0, alias: ['@/'], fetch: false, route: null, lines: 40, ...extra });
+const file = (packages: string[] = [], extra: Record<string, unknown> = {}) => ({ packages, deep: 0, alias: ['@/'], fetch: false, route: null, lines: 40, ...extra });
 const parsed = new Map([
   ['src/components/Header.tsx', file(['react-icons'])],
   ['src/components/Footer.tsx', file(['react-icons'])],
@@ -37,7 +37,7 @@ test('infer proposes only the rules the code already mostly follows', () => {
     api: { auth: 'required' },
     files: { maxLines: 500 },
   });
-  assert.match(infer(parsed).find((r) => r.key === 'icons').evidence, /^3 files; also lucide-react \(1\)$/, 'the test file does not count');
+  assert.match(infer(parsed).find((r) => r.key === 'icons')!.evidence, /^3 files; also lucide-react \(1\)$/, 'the test file does not count');
   assert.equal(toRules(infer(parsed, { middlewareAuth: true })).api, undefined, 'a middleware check covers every route');
   // the YAML round-trips, including values YAML would misread unquoted ('@/')
   assert.deepEqual(parse(toYaml(infer(parsed), 'shop')), rules);
@@ -95,7 +95,7 @@ test('Guard holds agents to the blueprint', () => {
 
 test('zomb blueprint --write saves it, and the scan reports what breaks it', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'zomb-blueprint-cli-'));
-  const cli = path.join(import.meta.dirname, '..', 'src', 'cli.js');
+  const cli = path.join(import.meta.dirname, '..', 'src', 'cli.ts');
   try {
     const repo = {
       'package.json': JSON.stringify({ name: 'shop', private: true, dependencies: { 'react-icons': '5.0.0', 'lucide-react': '0.400.0' } }),

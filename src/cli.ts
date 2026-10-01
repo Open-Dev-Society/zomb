@@ -5,15 +5,19 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { parseArgs, promisify } from 'node:util';
-import { isAgent, parseBlame, testsOnly, isTest, growth, versionSprawl, overlaps, sameNames, cycles, sharedFolders, namingStyles } from './score.js';
-import { parseAll, dependents, touches, clones, orphanRoutes } from './signals.js';
-import { scanRepo, npmAudit, openRoute, hasAuthSignal, securityFindings } from './security.js';
-import { renderReport } from './report.js';
-import { toTasks, fingerprint, toMarkdown } from './tasks.js';
-import { render, spinner, ui, renderBlueprint } from './terminal.js';
-import { infer, toRules, breaks, toYaml, readBlueprint, FILE as BLUEPRINT } from './blueprint.js';
-import { fix } from './fix.js';
-import { changesSince, scopeTo, shortcuts } from './diff.js';
+import { isAgent, parseBlame, testsOnly, isTest, growth, versionSprawl, overlaps, sameNames, cycles, sharedFolders, namingStyles } from './score.ts';
+import { parseAll, dependents, touches, clones, orphanRoutes } from './signals.ts';
+import { scanRepo, npmAudit, openRoute, hasAuthSignal, securityFindings } from './security.ts';
+import { renderReport } from './report.ts';
+import { toTasks, fingerprint, toMarkdown } from './tasks.ts';
+import { render, spinner, ui, renderBlueprint } from './terminal.ts';
+import { infer, toRules, breaks, toYaml, readBlueprint, FILE as BLUEPRINT } from './blueprint.ts';
+import { fix } from './fix.ts';
+import type { Rules, ScanData, Task, ZombieFile } from './types.ts';
+
+/** Anything thrown: Node mixes Error, exec failures with stdout/stderr, and JSON parse errors. */
+const why = (e: unknown) => (e as { stderr?: string; message?: string }) || {};
+import { changesSince, scopeTo, shortcuts } from './diff.ts';
 
 const paint = (tty) => ui({ width: process.stdout.columns || 80, color: Boolean(tty) && !process.env.NO_COLOR });
 const { dim, red, yellow, green, cyan } = paint(process.stderr.isTTY);
@@ -39,7 +43,7 @@ try {
   },
   });
 } catch (e) {
-  fail(`${e.message.split('. ')[0]}  ${dim('(zomb --help)')}`);
+  fail(`${String(why(e).message).split('. ')[0]}  ${dim('(zomb --help)')}`);
 }
 const { values: opts, positionals } = args;
 if (opts.help) {
@@ -90,9 +94,9 @@ async function knip() {
     return JSON.parse(await sh(process.execPath, [bin, '--reporter', 'json', '--no-exit-code', '--no-progress'], root));
   } catch (e) {
     // A config Knip can't load (vitest.config.ts without vitest installed) hides entry points, so its partial output lies.
-    const why = `${e.stderr || e.message}`.split('\n').find((l) => l.startsWith('ERROR')) || e.message.split('\n')[0];
+    const whyLine = `${why(e).stderr || why(e).message}`.split('\n').find((l) => l.startsWith('ERROR')) || String(why(e).message).split('\n')[0];
     const hint = existsSync(path.join(root, 'node_modules')) ? '' : ' Run npm install in the repo first: Knip needs dependencies to read config files.';
-    const error = `${why.replace(/^ERROR:\s*/, '')}.${hint}`;
+    const error = `${whyLine.replace(/^ERROR:\s*/, '')}.${hint}`;
     process.stderr.write(`${yellow('!')} Knip failed, so zombie detection is skipped: ${error}\n`);
     return { issues: [], error };
   }
@@ -101,8 +105,8 @@ async function knip() {
 // One pass over history -> agentOf: sha -> agent name (null = human), history: [{ sha, date, files:[{ path, added, deleted }] }]
 async function commits() {
   const out = await sh('git', ['log', '--numstat', '--no-renames', '--format=%x1e%H%x00%aI%x00%an <%ae>%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)'], root);
-  const agentOf = new Map();
-  const history = [];
+  const agentOf = new Map<string, string | null>();
+  const history: { sha: string; date: string; files: { path: string; added: number; deleted: number }[] }[] = [];
   for (const rec of out.split('\x1e')) {
     const [head, ...stat] = rec.split('\n');
     const [sha, date, author, trailers = ''] = head.split('\0');
@@ -158,14 +162,14 @@ const [knipOut, { agentOf, history }, parsed, copies, orphans, scan, audit, midd
 ]);
 
 // ---------- zombie code ----------
-const knipOf = new Map(knipOut.issues.map((i) => [i.file, i]));
+const knipOf: Map<string, any> = new Map(knipOut.issues.map((i: any) => [i.file, i]));
 // Tools load dot-folders (.claude/, .github/), *.config.* files and test files by convention, so never call them unused.
-const conventional = (f) => /(^|\/)\.[^/]+\/|\.config\.[cm]?[jt]s$/.test(f) || isTest(f);
+const conventional = (f: string) => /(^|\/)\.[^/]+\/|\.config\.[cm]?[jt]s$/.test(f) || isTest(f);
 const unused = new Set(files.filter((f) => knipOf.get(f)?.files?.length && !conventional(f)));
-const refs = new Map(await Promise.all([...unused].map(async (f) => [f, await referencedBy(f)])));
+const refs = new Map<string, string | null>(await Promise.all([...unused].map(async (f): Promise<[string, string | null]> => [f, await referencedBy(f)])));
 // A file started by path (action.yml runs run.ts) is live, and so is everything it imports: settle that before calling anything test-only.
-const live = new Set();
-let onlyTests;
+const live = new Set<string>();
+let onlyTests: Set<string>;
 for (;;) {
   onlyTests = new Set([...testsOnly(parsed, live)].filter((f) => !unused.has(f) && !conventional(f)));
   for (const f of onlyTests) if (!refs.has(f)) refs.set(f, await referencedBy(f));
@@ -194,8 +198,8 @@ const maybe = [...orphans].map(([file, url]) => ({ file, url, lines: parsed.get(
 // ---------- security ----------
 const touchesOf = touches(parsed);
 // a middleware with an auth check may protect every route, so the per-route check would cry wolf
-const middlewareAuth = middlewareSrc && hasAuthSignal(middlewareSrc);
-const openRoutes = middlewareAuth ? [] : [...parsed].map(([file, p]) => ({ file, why: openRoute(p.route, touchesOf.get(file)) })).filter((r) => r.why && !isTest(r.file));
+const middlewareAuth = Boolean(middlewareSrc && hasAuthSignal(middlewareSrc));
+const openRoutes = middlewareAuth ? [] : [...parsed].map(([file, p]) => ({ file, why: openRoute(p.route, touchesOf.get(file) || []) })).filter((r) => r.why && !isTest(r.file));
 const dangerous = [...parsed].flatMap(([file, p]) => (isTest(file) ? [] : p.dangerous.map((d) => ({ file, ...d }))));
 const security = securityFindings({ ...scan, dangerous, openRoutes, audit });
 
@@ -210,11 +214,11 @@ const dupes = copies && copies.sort((x, y) => y.lines - x.lines);
 const dependentsOf = dependents(parsed);
 const loops = cycles(new Map([...parsed].map(([f, p]) => [f, p.runtime])));
 // ---------- blueprint: the rules you approved. It takes over the file-size check when it sets one.
-let rules = null;
+let rules: Rules | null = null;
 try {
   rules = readBlueprint(root);
 } catch (e) {
-  fail(`${BLUEPRINT} isn't valid YAML: ${e.message.split('\n')[0]}`);
+  fail(`${BLUEPRINT} isn't valid YAML: ${String(why(e).message).split('\n')[0]}`);
 }
 const broken = rules ? [...parsed].filter(([f]) => !isTest(f)).flatMap(([file, p]) => breaks(rules, { file, packages: p.packages, deep: p.deep, route: middlewareAuth ? null : p.route, lines: p.lines }).map((b) => ({ file, ...b }))) : [];
 const big = [...parsed]
@@ -223,7 +227,7 @@ const big = [...parsed]
   .sort((a, b) => b.lines - a.lines);
 const deep = [...parsed].filter(([f, p]) => p.deep && !isTest(f)).map(([f, p]) => ({ file: f, count: p.deep })).sort((a, b) => b.count - a.count);
 
-let data = {
+let data: ScanData = {
   repo: path.basename(root),
   commit: (await sh('git', ['rev-parse', '--short', 'HEAD'], root)).trim(),
   date: new Date().toLocaleDateString('en-CA'),
@@ -231,14 +235,14 @@ let data = {
   lines: [...parsed.values()].reduce((n, p) => n + p.lines, 0),
   knipError: knipOut.error,
   zombie: { files: zombies, packages: unusedPackages, exports: deadExports, maybe },
-  security: { findings: security, audit, middlewareAuth: Boolean(middlewareAuth), middleware, inTests: scan.inTests },
+  security: { findings: security, audit, middlewareAuth, middleware, inTests: scan.inTests },
   sprawl: { months, recent, dupes, names: sameNames(parsed), versions: versionSprawl(files), overlaps: overlaps(packages) },
   architecture: { cycles: loops, big, shared: sharedFolders(files), deep, naming: namingStyles(files) },
   blueprint: rules && { broken },
 };
 // --since: report only what this change touched, plus the shortcuts it took
 if (opts.since) {
-  const change = await changesSince(root, opts.since).catch((e) => fail(`can't diff against ${opts.since}: ${e.message.split('\n')[0]}`));
+  const change = await changesSince(root, opts.since).catch((e) => fail(`can't diff against ${opts.since}: ${String(why(e).message).split('\n')[0]}`));
   data = { ...scopeTo(data, change), since: opts.since, shortcuts: shortcuts(change.diff, change.deleted) };
   log(`reporting only the ${change.changed.size} files changed since ${opts.since}`);
 }

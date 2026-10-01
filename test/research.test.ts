@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { agentOf, history } from '../research/state-of-ai-code.js';
+import { agentOf, history } from '../research/state-of-ai-code.ts';
 
 test('agentOf names the agent from the author or a trailer, and humans stay human', () => {
   assert.equal(agentOf(['Dev <dev@example.com>', 'Claude <noreply@anthropic.com>']), 'Claude');

@@ -5,9 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { check } from '../src/guard.js';
+import { check } from '../src/guard.ts';
 
-const bin = path.join(import.meta.dirname, '..', 'src', 'bin.js');
+const bin = path.join(import.meta.dirname, '..', 'src', 'bin.ts');
 const stripeKey = ['sk', 'live', 'Q7mZp2Lx9Rt4Vb8Nc1Hs6Kd3'].join('_');
 
 function repo() {

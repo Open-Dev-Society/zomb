@@ -7,33 +7,33 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { start } from '../cloud/server.js';
+import { start } from '../cloud/server.ts';
 
 const stripeKey = ['sk', 'live', 'Q7mZp2Lx9Rt4Vb8Nc1Hs6Kd3'].join('_');
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
 
 // GitHub's API, as far as the app uses it. Every call is recorded.
-function fakeGitHub() {
-  const calls = [];
-  const server = createServer(async (req, res) => {
+function fakeGitHub(): Promise<{ server: any; calls: any[]; url: string }> {
+  const calls: any[] = [];
+  const server: any = createServer(async (req, res) => {
     let body = '';
     for await (const c of req) body += c;
-    const call = { method: req.method, path: req.url, body: body && JSON.parse(body), auth: req.headers.authorization };
+    const call = { method: req.method, path: req.url || '', body: body && JSON.parse(body), auth: req.headers.authorization || '' };
     calls.push(call);
-    const reply = (status, data) => (res.writeHead(status, { 'content-type': 'application/json' }), res.end(JSON.stringify(data)));
-    if (req.url === '/app/installations/1/access_tokens') {
+    const reply = (status: number, data: unknown) => (res.writeHead(status, { 'content-type': 'application/json' }), res.end(JSON.stringify(data)));
+    if (call.path === '/app/installations/1/access_tokens') {
       const [h, p, sig] = call.auth.slice(7).split('.');
       if (!verifySig('RSA-SHA256', Buffer.from(`${h}.${p}`), publicKey, Buffer.from(sig, 'base64url'))) return reply(401, { message: 'bad jwt' });
       return reply(201, { token: 'inst-token', expires_at: new Date(Date.now() + 3600_000).toISOString() });
     }
-    if (req.method === 'POST' && req.url.endsWith('/check-runs')) return reply(201, { id: 7 });
-    if (req.method === 'PATCH' && req.url.includes('/check-runs/')) return reply(200, {});
-    if (req.method === 'GET' && /\/issues\/\d+\/comments/.test(req.url)) return reply(200, []);
-    if (req.method === 'POST' && /\/issues\/\d+\/comments$/.test(req.url)) return reply(201, { id: 9 });
-    if (req.method === 'GET' && req.url.startsWith('/repos/o/r/issues?')) return reply(200, []);
-    if (req.method === 'POST' && req.url === '/repos/o/r/issues') return reply(201, { number: 5 });
-    if (req.method === 'GET' && req.url === '/repos/o/r') return reply(200, { clone_url: server.cloneUrl, default_branch: 'main' });
-    reply(404, { message: `unexpected ${req.method} ${req.url}` });
+    if (req.method === 'POST' && call.path.endsWith('/check-runs')) return reply(201, { id: 7 });
+    if (req.method === 'PATCH' && call.path.includes('/check-runs/')) return reply(200, {});
+    if (req.method === 'GET' && /\/issues\/\d+\/comments/.test(call.path)) return reply(200, []);
+    if (req.method === 'POST' && /\/issues\/\d+\/comments$/.test(call.path)) return reply(201, { id: 9 });
+    if (req.method === 'GET' && call.path.startsWith('/repos/o/r/issues?')) return reply(200, []);
+    if (req.method === 'POST' && call.path === '/repos/o/r/issues') return reply(201, { number: 5 });
+    if (req.method === 'GET' && call.path === '/repos/o/r') return reply(200, { clone_url: server.cloneUrl, default_branch: 'main' });
+    reply(404, { message: `unexpected ${req.method} ${call.path}` });
   });
   return new Promise((r) => server.listen(0, () => r({ server, calls, url: `http://localhost:${server.address().port}` })));
 }
@@ -41,7 +41,7 @@ function fakeGitHub() {
 test('pull requests get a check and a comment; the weekly clean-up opens an issue for the agent', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'zomb-cloud-test-'));
   const gh = await fakeGitHub();
-  let app;
+  let app: any;
   try {
     // a repo with a remote: main has a dead file, the PR adds a live key
     const work = path.join(dir, 'work');

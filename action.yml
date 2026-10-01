@@ -19,7 +19,7 @@ runs:
   steps:
     - uses: actions/setup-node@v4
       with:
-        node-version: 22
+        node-version: 24
     - name: Install zomb
       shell: bash
       run: npm ci --omit=dev --no-audit --no-fund --prefix "$GITHUB_ACTION_PATH"
@@ -36,7 +36,7 @@ runs:
         if [ -n "$BASE" ]; then args+=(--since "$BASE"); fi
         if [ -n "$FAIL_ON" ]; then args+=(--fail-on "$FAIL_ON"); fi
         set +e
-        node "$GITHUB_ACTION_PATH/src/cli.js" "${args[@]}" > "$RUNNER_TEMP/zomb.md"
+        node "$GITHUB_ACTION_PATH/src/cli.ts" "${args[@]}" > "$RUNNER_TEMP/zomb.md"
         echo "code=$?" >> "$GITHUB_OUTPUT"
         cat "$RUNNER_TEMP/zomb.md" >> "$GITHUB_STEP_SUMMARY"
     - name: Comment on the pull request

@@ -1,4 +1,6 @@
-// Pure logic: no IO here, so test/score.test.js can cover all of it.
+// Pure logic: no IO here, so test/score.test.ts can cover all of it.
+import { truthy } from './types.ts';
+import type { Month, Overlap, Parsed, Version } from './types.ts';
 
 // ponytail: heuristic agent list from trailers/authors; read git-ai notes + Entire checkpoints for exact attribution
 // Only agent addresses: people who work at Anthropic/OpenAI/Cursor use the same domains.
@@ -6,29 +8,29 @@ const AGENT_EMAIL = /<(noreply@anthropic\.com|noreply@openai\.com|cursoragent@cu
 const AGENT_BOT = /\b(claude|codex|copilot|cursor|devin|jules|gemini|aider|windsurf|opencode|amp|droid)\b.*\[bot\]$/i;
 
 // "Name <email>" -> true when an AI agent wrote it. Human names like "Claude Monet <c@x.com>" stay human.
-export const isAgent = (person) =>
+export const isAgent = (person: string): boolean =>
   AGENT_EMAIL.test(person) || AGENT_BOT.test(person.replace(/\s*<.*$/, '')) || /\(aider\)/i.test(person);
 
 // `git blame --porcelain` -> the sha that last touched each line, in file order
-export function parseBlame(text) {
-  const shas = [];
-  let sha = null;
+export function parseBlame(text: string): string[] {
+  const shas: string[] = [];
+  let sha: string | null = null;
   for (const line of text.split('\n')) {
-    if (line.startsWith('\t')) shas.push(sha);
+    if (line.startsWith('\t') && sha) shas.push(sha);
     else if (/^[0-9a-f]{40} \d+ \d+/.test(line)) sha = line.slice(0, 40);
   }
   return shas;
 }
 
 // What a file can hurt, from its imports (and a few source patterns).
-const SURFACES = [
+const SURFACES: [string, RegExp][] = [
   ['payments', /^(stripe|@stripe\/|razorpay|dodopayments|@dodopayments\/|@paddle\/|@lemonsqueezy\/|braintree|@paypal\/)/],
   ['auth', /^(next-auth|@auth\/|jsonwebtoken|jose|bcrypt|bcryptjs|argon2|@clerk\/|lucia|passport|better-auth|iron-session|@kinde-oss\/|@supabase\/ssr)/],
   ['database', /^(pg|postgres|mysql2?|mongodb|mongoose|@prisma\/client|drizzle-orm|@supabase\/supabase-js|kysely|ioredis|redis|better-sqlite3|sqlite3|@neondatabase\/|@planetscale\/|@libsql\/|@vercel\/postgres|@vercel\/kv|@upstash\/redis|firebase-admin)/],
   ['shell', /^(node:)?child_process$/],
 ];
-export function surfacesOf(specs, src) {
-  const tags = new Set(SURFACES.filter(([, re]) => specs.some((s) => re.test(s))).map(([tag]) => tag));
+export function surfacesOf(specs: string[], src: string): string[] {
+  const tags = new Set<string>(SURFACES.filter(([, re]) => specs.some((s) => re.test(s))).map(([tag]) => tag));
   // NEXT_PUBLIC_/VITE_/PUBLIC_ keys ship to the browser on purpose, so they aren't secrets
   if (/process\.env\.(?!NEXT_PUBLIC_|VITE_|PUBLIC_|EXPO_PUBLIC_)\w*(SECRET|KEY|TOKEN|PASSWORD|PRIVATE)/i.test(src)) tags.add('secrets');
   return [...tags];
@@ -39,15 +41,15 @@ export function surfacesOf(specs, src) {
 const TEST = /(^|\/)(__tests__|__mocks__|tests?|e2e|cypress|playwright|fixtures?)\/|\.(test|spec|stories|story|bench)\.[cm]?[jt]sx?$/;
 // Files a framework or runtime loads by name, so having no importer (or only test importers) doesn't make them dead.
 const ENTRY = /(^|\/)(page|layout|route|loading|error|not-found|template|default|middleware|instrumentation|global-error|opengraph-image|twitter-image|icon|apple-icon|sitemap|robots|manifest)\.[cm]?[jt]sx?$|(^|\/)(index|main|server|cli|app)\.[cm]?[jt]sx?$|(^|\/)(bin|scripts|pages)\//;
-export const isTest = (f) => TEST.test(f);
-export const isEntry = (f) => ENTRY.test(f);
+export const isTest = (f: string) => TEST.test(f);
+export const isEntry = (f: string) => ENTRY.test(f);
 
 // Files that only tests (or other test-only files) import: their tests keep them alive, nothing else does.
 // parsed: Map(path -> { imports:[paths] }); keep: files known to be live (e.g. started by path from action.yml)
-export function testsOnly(parsed, keep = new Set()) {
+export function testsOnly(parsed: Map<string, Pick<Parsed, 'imports'>>, keep: Set<string> = new Set()): Set<string> {
   const importers = new Map();
   for (const [file, p] of parsed) for (const dep of p.imports) importers.set(dep, [...(importers.get(dep) || []), file]);
-  const only = new Set();
+  const only = new Set<string>();
   for (let changed = true; changed; ) {
     changed = false;
     for (const file of parsed.keys()) {
@@ -61,7 +63,7 @@ export function testsOnly(parsed, keep = new Set()) {
 
 // Next.js page/API route file -> { url, prefix, kind:'page'|'api' } (prefix = the static part before the first [param]); null for other files.
 // Routes that outside services call by design (webhooks, auth callbacks, crons, SEO files) are skipped.
-export function routeOf(file) {
+export function routeOf(file: string): { url: string; prefix: string; kind: 'page' | 'api' } | null {
   const app = file.match(/(?:^|\/)app\/((?:.*\/)?)(?:page|route)\.[cm]?[jt]sx?$/);
   const pages = !app && file.match(/(?:^|\/)pages\/(.+)\.[cm]?[jt]sx?$/);
   let segs;
@@ -80,7 +82,7 @@ export function routeOf(file) {
 // ---------- sprawl: AI keeps creating, never deleting ----------
 
 // git log records -> [{ month:'2026-03', added, deleted }] lines of JS/TS per month
-export function growth(history) {
+export function growth(history: { date: string; files: { added: number; deleted: number }[] }[]): Month[] {
   const months = new Map();
   for (const c of history) {
     const month = c.date.slice(0, 7);
@@ -95,7 +97,7 @@ export function growth(history) {
 const VERSIONED = /^(.+?)(?:[-_. ]?(?:v\d+|new|old|copy|backup|bak|legacy|temp|tmp|final|fixed|deprecated|unused|draft)|(?<=[a-z0-9])(?:V\d+|New|Old|Copy|Backup|Legacy|Temp|Final|Fixed|Deprecated|Draft))$/;
 const VERSIONED_DIR = /^(v\d+|old|legacy|backup|deprecated|archive|unused|temp|tmp|[a-z]{1,3}v\d+)$/i;
 // src/ChatV2.tsx -> src/Chat.tsx: the file this name says it is a version of (null when the name isn't versioned)
-export function originalOf(file) {
+export function originalOf(file: string): string | null {
   const dir = file.slice(0, file.lastIndexOf('/') + 1);
   const [, stem, ext] = file.slice(dir.length).match(/^(.*?)((?:\.[a-z0-9]+)+)$/i) || [null, file.slice(dir.length), ''];
   const m = stem.match(VERSIONED);
@@ -103,10 +105,10 @@ export function originalOf(file) {
 }
 
 // -> [{ path, original|null }] for files, then [{ path:'dir/', files:N }] for versioned folders (counted once, not per file)
-export function versionSprawl(files) {
+export function versionSprawl(files: string[]): Version[] {
   const set = new Set(files);
-  const out = [];
-  const folders = new Map();
+  const out: Version[] = [];
+  const folders = new Map<string, number>();
   for (const f of files) {
     if (isTest(f)) continue;
     const dir = f.slice(0, f.lastIndexOf('/') + 1);
@@ -141,11 +143,11 @@ const OVERLAP = {
   ORMs: ['@prisma/client', 'drizzle-orm', 'kysely', 'typeorm', 'sequelize', 'mongoose', 'knex'],
 };
 const ALIAS = { '@reduxjs/toolkit': 'redux', 'react-redux': 'redux', 'react-chartjs-2': 'chart.js', 'echarts-for-react': 'echarts', 'react-apexcharts': 'apexcharts', '@emotion/react': 'emotion', '@emotion/styled': 'emotion', '@react-spring/web': 'react-spring', 'react-query': '@tanstack/react-query' };
-export const packageOf = (spec) => (spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]);
-export const family = (pkg) => ALIAS[pkg] || (pkg.startsWith('@nivo/') ? 'nivo' : pkg.startsWith('@visx/') ? 'visx' : pkg.startsWith('d3-') ? 'd3' : pkg);
+export const packageOf = (spec: string): string => (spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]);
+export const family = (pkg: string): string => ALIAS[pkg] || (pkg.startsWith('@nivo/') ? 'nivo' : pkg.startsWith('@visx/') ? 'visx' : pkg.startsWith('d3-') ? 'd3' : pkg);
 // 'lucide-react' + the repo's dependencies -> { job:'icon sets', existing:['react-icons'] } when another library already does that job
-export const jobOf = (pkg) => Object.entries(OVERLAP).find(([, libs]) => libs.includes(family(pkg)))?.[0];
-export function sameJob(pkg, deps) {
+export const jobOf = (pkg: string): string | undefined => Object.entries(OVERLAP).find(([, libs]) => libs.includes(family(pkg)))?.[0];
+export function sameJob(pkg: string, deps: string[]): { job: string; existing: string[] } | null {
   const job = jobOf(pkg);
   if (!job) return null;
   const existing = [...new Set(deps.filter((d) => family(d) !== family(pkg) && OVERLAP[job].includes(family(d))))];
@@ -153,8 +155,8 @@ export function sameJob(pkg, deps) {
 }
 
 // packages: Map(package name -> [files importing it]) -> [{ job, libraries:[{ name, files }] }]
-export function overlaps(packages) {
-  const out = [];
+export function overlaps(packages: Map<string, string[]>): Overlap[] {
+  const out: Overlap[] = [];
   for (const [job, libs] of Object.entries(OVERLAP)) {
     const used = new Map();
     for (const [pkg, files] of packages) if (libs.includes(family(pkg))) used.set(family(pkg), [...new Set([...(used.get(family(pkg)) || []), ...files])]);
@@ -167,7 +169,7 @@ export function overlaps(packages) {
 const CONVENTION = new Set(['default', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'metadata', 'generateMetadata', 'generateStaticParams', 'viewport', 'config', 'runtime', 'dynamic', 'revalidate', 'maxDuration', 'fetchCache', 'preferredRegion', 'middleware', 'handler', 'loader', 'action', 'alt', 'size', 'contentType']);
 
 // parsed: Map(path -> { exported:[names] }) -> [{ name, files }] for names defined in 2+ files
-export function sameNames(parsed) {
+export function sameNames(parsed: Map<string, Pick<Parsed, 'exported'>>): { name: string; files: string[] }[] {
   const byName = new Map();
   for (const [file, p] of parsed) for (const name of new Set(p.exported)) if (!CONVENTION.has(name) && !isTest(file)) byName.set(name, [...(byName.get(name) || []), file]);
   return [...byName].filter(([, files]) => files.length > 1).map(([name, files]) => ({ name, files })).sort((a, b) => b.files.length - a.files.length);
@@ -177,20 +179,24 @@ export function sameNames(parsed) {
 
 // Import cycles (runtime imports only; type imports vanish at build time). graph: Map(path -> [paths]) -> [[paths]]
 // ponytail: recursive Tarjan; switch to an explicit stack if a repo has import chains thousands deep
-export function cycles(graph) {
+export function cycles(graph: Map<string, string[]>): string[][] {
   let index = 0;
-  const idx = new Map(), low = new Map(), stack = [], on = new Set(), out = [];
-  const visit = (v) => {
+  const idx = new Map<string, number>();
+  const low = new Map<string, number>();
+  const stack: string[] = [];
+  const on = new Set<string>();
+  const out: string[][] = [];
+  const visit = (v: string) => {
     idx.set(v, index), low.set(v, index++), stack.push(v), on.add(v);
     for (const w of graph.get(v) || []) {
       if (!graph.has(w)) continue;
-      if (!idx.has(w)) visit(w), low.set(v, Math.min(low.get(v), low.get(w)));
-      else if (on.has(w)) low.set(v, Math.min(low.get(v), idx.get(w)));
+      if (!idx.has(w)) visit(w), low.set(v, Math.min(low.get(v)!, low.get(w)!));
+      else if (on.has(w)) low.set(v, Math.min(low.get(v)!, idx.get(w)!));
     }
     if (low.get(v) === idx.get(v)) {
-      const scc = [];
-      let w;
-      do (w = stack.pop()), on.delete(w), scc.push(w);
+      const scc: string[] = [];
+      let w: string | undefined;
+      do (w = stack.pop()!), on.delete(w), scc.push(w);
       while (w !== v);
       if (scc.length > 1) out.push(scc.sort());
     }
@@ -200,8 +206,8 @@ export function cycles(graph) {
 }
 
 // Where shared code lives: every utils/lib/helpers/shared/common folder. Several of them means nobody knows where to look.
-export function sharedFolders(files) {
-  const dirs = new Set();
+export function sharedFolders(files: string[]): string[] {
+  const dirs = new Set<string>();
   for (const f of files) {
     if (isTest(f)) continue;
     const segs = f.split('/').slice(0, -1);
@@ -212,13 +218,16 @@ export function sharedFolders(files) {
 }
 
 // Component file naming: PascalCase vs kebab-case vs camelCase. Mixed styles make files hard to guess.
-export function namingStyles(files) {
+export function namingStyles(files: string[]): [string, number][] {
   const count = { PascalCase: 0, 'kebab-case': 0, camelCase: 0, snake_case: 0 };
-  for (const f of files) if (/\.[jt]sx$/.test(f) && !isTest(f) && !isEntry(f) && styleOf(f)) count[styleOf(f)]++;
+  for (const f of files) {
+    const style = /\.[jt]sx$/.test(f) && !isTest(f) && !isEntry(f) ? styleOf(f) : null;
+    if (style) count[style as keyof typeof count]++;
+  }
   return Object.entries(count).filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
 }
 // 'src/components/UserCard.tsx' -> 'PascalCase'; one-word lowercase names fit every style but PascalCase, so they get null
-export function styleOf(file) {
+export function styleOf(file: string): string | null {
   const stem = file.slice(file.lastIndexOf('/') + 1).replace(/\.[cm]?[jt]sx?$/, '');
   if (/^[A-Z][A-Za-z0-9]*$/.test(stem)) return 'PascalCase';
   if (/^[a-z0-9]+(-[a-z0-9]+)+$/.test(stem)) return 'kebab-case';

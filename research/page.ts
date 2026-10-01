@@ -3,29 +3,33 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const n = (x, d = 0) => (x === null || x === undefined ? '–' : Number(x).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }));
-const COLOR = { Claude: 'claude', Cursor: 'cursor', Codex: 'codex', Copilot: 'copilot', Devin: 'devin', Jules: 'jules', Human: 'human' };
-const list = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
-const ratio = (m) => m.vsHumans && m.vsHumans.agent / m.vsHumans.human;
+type Metric = { value: number | null; range: [number | null, number | null]; vsHumans?: { repos: number; agent: number; human: number; ratioRange: [number, number] } };
+type Agent = { name: string; repos: number; commits: number; added: number; deleted: number; medianCommit: number; secrets: number; metrics: Record<string, Metric>; shortcuts: Record<string, number> };
+type Summary = { generated: string; since: string; depth: number; repos: number; commits: number; lines: number; agents: Agent[] };
+
+const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const n = (x: number | null | undefined, d = 0) => (x === null || x === undefined ? '–' : Number(x).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }));
+const COLOR: Record<string, string> = { Claude: 'claude', Cursor: 'cursor', Codex: 'codex', Copilot: 'copilot', Devin: 'devin', Jules: 'jules', Human: 'human' };
+const list = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
+const ratio = (m: Metric) => (m.vsHumans ? m.vsHumans.agent / m.vsHumans.human : null);
 // "clearly" only when the whole 90% range sits on one side of the humans
-const verdict = (m) => (!m.vsHumans ? null : m.vsHumans.ratioRange[1] < 1 ? 'less' : m.vsHumans.ratioRange[0] > 1 ? 'more' : 'same');
+const verdict = (m: Metric) => (!m.vsHumans ? null : m.vsHumans.ratioRange[1] < 1 ? 'less' : m.vsHumans.ratioRange[0] > 1 ? 'more' : 'same');
 
 // nice round axis ticks from 0 to just past max
-function ticks(max) {
-  const step = [1, 2, 2.5, 5, 10].map((s) => s * 10 ** Math.floor(Math.log10(max / 4))).find((s) => max / s <= 5);
+function ticks(max: number): number[] {
+  const step = [1, 2, 2.5, 5, 10].map((s) => s * 10 ** Math.floor(Math.log10(max / 4))).find((s) => max / s <= 5) || 1;
   return Array.from({ length: Math.ceil(max / step) + 1 }, (_, i) => Math.round(i * step * 100) / 100);
 }
 
 // One row per agent: the humans in its repos (hollow) and the agent (filled), on one scale, with the ratio on the right.
-function dumbbell(agents, key, unit, digits = 1) {
-  const rows = agents.filter((a) => a.metrics[key].vsHumans).sort((a, b) => ratio(a.metrics[key]) - ratio(b.metrics[key]));
-  const scale = ticks(Math.max(...rows.flatMap((a) => [a.metrics[key].vsHumans.agent, a.metrics[key].vsHumans.human])) * 1.05);
-  const max = scale.at(-1);
-  const x = (v) => `${(v / max) * 100}%`;
+function dumbbell(agents: Agent[], key: string, unit: string, digits = 1) {
+  const rows = agents.filter((a) => a.metrics[key].vsHumans).sort((a, b) => ratio(a.metrics[key])! - ratio(b.metrics[key])!);
+  const scale = ticks(Math.max(...rows.flatMap((a) => [a.metrics[key].vsHumans!.agent, a.metrics[key].vsHumans!.human])) * 1.05);
+  const max = scale.at(-1)!;
+  const x = (v: number) => `${(v / max) * 100}%`;
   const body = rows
     .map((a) => {
-      const m = a.metrics[key].vsHumans;
+      const m = a.metrics[key].vsHumans!;
       const [lo, hi] = [Math.min(m.agent, m.human), Math.max(m.agent, m.human)];
       const v = verdict(a.metrics[key]);
       return `<div class="row">
@@ -43,11 +47,11 @@ ${body}
 }
 
 // Median commit size, one dot per author (humans included).
-function commitSizes(agents) {
+function commitSizes(agents: Agent[]) {
   const rows = [...agents].sort((a, b) => a.medianCommit - b.medianCommit);
   const scale = ticks(Math.max(...rows.map((a) => a.medianCommit)) * 1.05);
-  const max = scale.at(-1);
-  const x = (v) => `${(v / max) * 100}%`;
+  const max = scale.at(-1)!;
+  const x = (v: number) => `${(v / max) * 100}%`;
   return `<figure class="chart" role="img" aria-label="Median lines added per commit">
 <div class="legend"><span class="unit">median lines added per commit</span></div>
 ${rows.map((a) => `<div class="row"><div class="who"><span class="swatch ${COLOR[a.name]}"></span>${esc(a.name === 'Human' ? 'Humans' : a.name)}</div><div class="track"><span class="bar" style="left:0;width:${x(a.medianCommit)}"></span><span class="dot ${COLOR[a.name]}" style="left:${x(a.medianCommit)}"></span></div><div class="stat"><b>${n(a.medianCommit)}</b> <span>lines</span></div></div>`).join('')}
@@ -55,10 +59,10 @@ ${rows.map((a) => `<div class="row"><div class="who"><span class="swatch ${COLOR
 </figure>`;
 }
 
-export function renderPage(d) {
-  const humans = d.agents.find((a) => a.name === 'Human');
+export function renderPage(d: Summary) {
+  const humans = d.agents.find((a) => a.name === 'Human')!;
   const agents = d.agents.filter((a) => a.name !== 'Human');
-  const by = (key, v) => agents.filter((a) => verdict(a.metrics[key]) === v).map((a) => a.name);
+  const by = (key: string, v: string | null) => agents.filter((a) => verdict(a.metrics[key]) === v).map((a) => a.name);
   const del = { less: by('deletedPer100', 'less'), more: by('deletedPer100', 'more') };
   const cut = { less: by('shortcutsPer1k', 'less'), more: by('shortcutsPer1k', 'more') };
   const dead = { less: by('deadPer1k', 'less'), more: by('deadPer1k', 'more') };
@@ -68,8 +72,8 @@ export function renderPage(d) {
   const to = new Date(d.generated).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
   const secrets = d.agents.reduce((s, a) => s + a.secrets, 0);
   // "36–62%": how much less, across the agents that clearly do less
-  const lessRange = (key, names) => {
-    const pct = names.map((name) => Math.round((1 - ratio(agents.find((a) => a.name === name).metrics[key])) * 100)).sort((a, b) => a - b);
+  const lessRange = (key: string, names: string[]) => {
+    const pct = names.map((name) => Math.round((1 - ratio(agents.find((a) => a.name === name)!.metrics[key])!) * 100)).sort((a, b) => a - b);
     return pct[0] === pct.at(-1) ? `${pct[0]}%` : `${pct[0]}–${pct.at(-1)}%`;
   };
   const multiples = agents.filter((a) => a.medianCommit >= humans.medianCommit * 1.5).map((a) => a.medianCommit / humans.medianCommit);

@@ -1,11 +1,13 @@
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const n = (x) => x.toLocaleString('en-US');
-const plural = (k, word) => `${n(k)} ${word}${k === 1 ? '' : 's'}`;
-const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const code = (s) => `<code>${esc(s)}</code>`;
-const more = (total, shown) => (total > shown ? `<p class="muted">…and ${n(total - shown)} more</p>` : '');
+import type { Clone, Month, ScanData, Shortcut } from './types.ts';
 
-function securitySection({ findings, audit, middlewareAuth, middleware, inTests }) {
+const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const n = (x: number) => x.toLocaleString('en-US');
+const plural = (k: number, word: string) => `${n(k)} ${word}${k === 1 ? '' : 's'}`;
+const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const code = (s: string) => `<code>${esc(s)}</code>`;
+const more = (total: number, shown: number) => (total > shown ? `<p class="muted">…and ${n(total - shown)} more</p>` : '');
+
+function securitySection({ findings, audit, middlewareAuth, middleware, inTests }: ScanData['security']) {
   const notes = [
     inTests && `${plural(inTests, 'key-shaped string')} in test files ${inTests === 1 ? 'was' : 'were'} skipped: tests use fake keys to check redaction.`,
     audit.skipped && `Vulnerable packages weren't checked: ${audit.skipped}.`,
@@ -16,14 +18,14 @@ function securitySection({ findings, audit, middlewareAuth, middleware, inTests 
   ${notes.map((t) => `<p class="note">${esc(t)}</p>`).join('')}</section>`;
 }
 
-function shortcutsSection(shortcuts) {
+function shortcutsSection(shortcuts: Shortcut[] | undefined) {
   if (!shortcuts) return '';
   return `<section id="shortcuts"><h2>Shortcuts</h2>
   <p class="muted">Places this change silences or skips a check instead of fixing what it found: suppressions, skipped or focused tests, deleted tests, special-casing the test environment.</p>
   ${shortcuts.length ? `<ul class="items">${shortcuts.map((c) => `<li><span class="sev ${c.severity}">${c.severity}</span><div><b>${esc(c.kind)}</b> ${code(c.line ? `${c.file}:${c.line}` : c.file)}</div></li>`).join('')}</ul>` : '<p>None found.</p>'}</section>`;
 }
 
-function zombieSection({ files, packages, exports, maybe }, knipError) {
+function zombieSection({ files, packages, exports, maybe }: ScanData['zombie'], knipError?: string) {
   if (knipError) return `<section id="zombie"><h2>Zombie code</h2><p class="note">Skipped: ${esc(knipError)}</p></section>`;
   const lines = files.reduce((s, f) => s + f.lines, 0);
   return `<section id="zombie"><h2>Zombie code</h2>
@@ -35,7 +37,7 @@ function zombieSection({ files, packages, exports, maybe }, knipError) {
   </section>`;
 }
 
-function growthChart(months) {
+function growthChart(months: Month[]) {
   const shown = months.slice(-12);
   if (!shown.length) return '';
   const max = Math.max(...shown.map((m) => Math.max(m.added, m.deleted)), 1);
@@ -45,7 +47,7 @@ function growthChart(months) {
     .join('')}</div><p class="legend"><i class="add"></i> lines added <i class="del"></i> lines deleted</p>`;
 }
 
-function sprawlSection({ months, recent, dupes, names, versions, overlaps }) {
+function sprawlSection({ months, recent, dupes, names, versions, overlaps }: ScanData['sprawl']) {
   const added = recent.reduce((s, m) => s + m.added, 0);
   const deleted = recent.reduce((s, m) => s + m.deleted, 0);
   return `<section id="sprawl"><h2>Sprawl</h2>
@@ -59,24 +61,24 @@ function sprawlSection({ months, recent, dupes, names, versions, overlaps }) {
   </section>`;
 }
 
-function architectureSection({ cycles, big, shared, deep, naming }) {
+function architectureSection({ cycles, big, shared, deep, naming }: ScanData['architecture']) {
   const mixed = naming.length > 1 && naming[1][1] / naming.reduce((s, [, k]) => s + k, 0) >= 0.15;
   return `<section id="architecture"><h2>Architecture</h2>
   ${cycles.length ? `<h3>Import cycles <span class="muted">${cycles.length}</span></h3><p class="muted">Files that import each other in a loop. They break tree-shaking, cause undefined-at-startup bugs and make it impossible to change one without the other.</p><ul class="items">${cycles.slice(0, 10).map((c) => `<li><div><b>${c.length} files</b><p class="muted">${esc(c.slice(0, 6).join(' → '))}${c.length > 6 ? ` and ${c.length - 6} more` : ''}</p></div></li>`).join('')}</ul>${more(cycles.length, 10)}` : '<p class="muted">No import cycles.</p>'}
-  ${big.length ? `<h3>Oversized files <span class="muted">${big.length}</span></h3><p class="muted">Over 500 lines. Agents keep appending to the file they already have open; split these by job.</p><ul class="items">${big.slice(0, 12).map((b) => `<li><div>${code(b.file)} <span class="muted">${n(b.lines)} lines${b.dependents ? ` · ${plural(b.dependents, 'file')} depend${b.dependents === 1 ? 's' : ''} on it` : ''}</span></div></li>`).join('')}</ul>${more(big.length, 12)}` : ''}
+  ${big.length ? `<h3>Oversized files <span class="muted">${big.length}</span></h3><p class="muted">Over 500 lines. Agents keep appending to the file they already have open; split these by job.</p><ul class="items">${big.slice(0, 12).map((b) => `<li><div>${code(b.file || '')} <span class="muted">${n(b.lines)} lines${b.dependents ? ` · ${plural(b.dependents, 'file')} depend${b.dependents === 1 ? 's' : ''} on it` : ''}</span></div></li>`).join('')}</ul>${more(big.length, 12)}` : ''}
   ${shared.length > 2 ? `<h3>Shared code in ${shared.length} places</h3><p class="muted">Helpers live in several utils/lib/helpers/shared folders, so nobody knows where to look and new ones get written instead.</p><p>${shared.map(code).join(' ')}</p>` : ''}
   ${deep.length ? `<h3>Deep relative imports <span class="muted">${plural(deep.length, 'file')}</span></h3><p class="muted">Imports like ../../../ break whenever a file moves. A path alias (@/lib/…) fixes them for good.</p><ul class="items">${deep.slice(0, 8).map((d) => `<li><div>${code(d.file)} <span class="muted">${plural(d.count, 'import')}</span></div></li>`).join('')}</ul>${more(deep.length, 8)}` : ''}
   ${mixed ? `<h3>Mixed file naming</h3><p class="muted">Component files use ${naming.length} naming styles, so you can't guess a file's name: ${naming.map(([style, k]) => `${esc(style)} (${n(k)})`).join(', ')}.</p>` : ''}
   </section>`;
 }
 
-function blueprintSection(blueprint) {
+function blueprintSection(blueprint: ScanData['blueprint']) {
   if (!blueprint) return '';
   return `<section id="blueprint"><h2>Blueprint</h2>
   <p class="muted">The rules in <code>.zomb/blueprint.yml</code>: the libraries, folders, names and limits this codebase agreed on.</p>
-  ${blueprint.broken.length ? `<ul class="items">${blueprint.broken.map((b) => `<li><span class="sev high">rule</span><div><b>${esc(b.why)}</b> ${code(b.file)}</div></li>`).join('')}</ul>` : '<p>Every file follows it.</p>'}</section>`;
+  ${blueprint.broken.length ? `<ul class="items">${blueprint.broken.map((b) => `<li><span class="sev high">rule</span><div><b>${esc(b.why)}</b> ${code(b.file || '')}</div></li>`).join('')}</ul>` : '<p>Every file follows it.</p>'}</section>`;
 }
-export function renderReport({ repo, commit, date, files, lines, knipError, zombie, security, sprawl, architecture, shortcuts, since, blueprint }) {
+export function renderReport({ repo, commit, date, files, lines, knipError, zombie, security, sprawl, architecture, shortcuts, since, blueprint }: ScanData): string {
   const high = security.findings.filter((f) => f.severity === 'high').length;
   const zLines = zombie.files.reduce((s, f) => s + f.lines, 0);
   const added = sprawl.recent.reduce((s, m) => s + m.added, 0);
@@ -101,7 +103,7 @@ i.add{background:var(--ink2)}i.del{background:var(--good)}.legend{font-size:12px
 footer{margin-top:64px;color:var(--muted);font-size:13px}footer p{margin:0 0 8px}
 @media (max-width:700px){.cards{grid-template-columns:1fr 1fr}h1{font-size:30px}}
 </style></head><body><main>
-<header><p class="muted">zomb · commit ${esc(commit)} · ${esc(date)}</p><h1>${esc(repo)}</h1><p class="muted">${n(files)} JS/TS files, ${n(lines)} lines, checked for security problems, zombie code, sprawl and architecture.${since ? ` Showing only what changed since <code>${esc(since)}</code>.` : ''}</p></header>
+<header><p class="muted">zomb · commit ${esc(commit)} · ${esc(date)}</p><h1>${esc(repo)}</h1><p class="muted">${n(files)} JS/TS files, ${n(lines)} lines, checked for security problems, zombie code, sprawl and architecture.${since ? ` Showing only what changed since <code>${esc(since || '')}</code>.` : ''}</p></header>
 <div class="cards">
 ${card('security', n(security.findings.length), 'security issues', high ? `${n(high)} high` : 'none high', high ? 'bad' : '')}
 ${card('zombie', knipError ? '–' : n(zLines), 'lines of zombie code', knipError ? 'skipped' : `${plural(zombie.files.length, 'file')} · ${plural(zombie.packages.length, 'unused package')}`)}

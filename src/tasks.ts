@@ -1,10 +1,12 @@
 // Findings -> one ordered to-do list that an AI agent (or a person) can work through.
 // `safe` = mechanical and checkable by a build: an agent may do it without asking. Everything else needs a human yes.
-const plural = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
+import type { ScanData, Severity, Task } from './types.ts';
 
-export function toTasks({ security, zombie, sprawl, architecture, shortcuts = [], blueprint }) {
-  const tasks = [];
-  const add = (t) => tasks.push({ id: tasks.length + 1, ...t });
+const plural = (k: number, word: string) => `${k} ${word}${k === 1 ? '' : 's'}`;
+
+export function toTasks({ security, zombie, sprawl, architecture, shortcuts = [], blueprint }: ScanData): Task[] {
+  const tasks: Task[] = [];
+  const add = (t: Omit<Task, 'id'>) => tasks.push({ id: tasks.length + 1, ...t });
 
   for (const f of security.findings) {
     if (!f.package) {
@@ -12,7 +14,7 @@ export function toTasks({ security, zombie, sprawl, architecture, shortcuts = []
       continue;
     }
     // one task per vulnerable package: each is its own fix
-    for (const a of security.audit.top)
+    for (const a of security.audit.top || [])
       add({ area: 'security', severity: 'high', action: 'upgrade', title: `Upgrade ${a.name}: ${a.title}`, where: `${a.name} (${a.severity}${a.direct ? ', direct dependency' : ''})`, how: a.fix ? 'Run npm audit fix (never --force), then the build and tests.' : 'No fixed version yet: check the advisory for a workaround, or replace the package.', safe: false });
   }
 
@@ -39,7 +41,7 @@ export function toTasks({ security, zombie, sprawl, architecture, shortcuts = []
     api: 'Add the auth check the other routes use. If it is meant to be public, add `// zomb-allow: public` to the file.',
     files: 'Split it by job into smaller files; keep the public exports stable.',
   };
-  for (const b of blueprint?.broken || []) add({ area: 'blueprint', severity: 'high', action: 'follow-blueprint', title: b.why, where: b.file, how: BLUEPRINT_HOW[b.rule.split('.')[0]], safe: false });
+  for (const b of blueprint?.broken || []) add({ area: 'blueprint', severity: 'high', action: 'follow-blueprint', title: b.why, where: b.file || '', how: BLUEPRINT_HOW[b.rule.split('.')[0]], safe: false });
 
   for (const f of zombie.files)
     add(
@@ -64,22 +66,22 @@ export function toTasks({ security, zombie, sprawl, architecture, shortcuts = []
   for (const c of architecture.cycles) add({ area: 'architecture', severity: 'low', action: 'break-cycle', title: `Import cycle through ${plural(c.length, 'file')}`, where: c.join(' -> '), how: 'Move what both sides need into a new module that neither imports back.', safe: false });
   for (const b of architecture.big) add({ area: 'architecture', severity: 'low', action: 'split', title: `Split ${b.file} (${b.lines} lines)`, where: b.file, how: 'Split it by job into smaller files; keep the public exports stable.', safe: false });
 
-  const rank = { high: 0, medium: 1, low: 2 };
+  const rank: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
   return tasks.sort((a, b) => rank[a.severity] - rank[b.severity] || a.id - b.id).map((t, i) => ({ ...t, id: i + 1 }));
 }
 
 // Stable identity for a task across runs: line numbers and counts drift as code moves, the problem doesn't.
 // `key` pins findings whose location is a list that can grow (a browser-exposed variable used in more files)
-export const fingerprint = (t) => [t.area, t.action, t.title.replace(/\d[\d,.]*/g, '#'), t.key || t.where.replace(/:\d+(-\d+)?/g, '')].join('|');
+export const fingerprint = (t: Pick<Task, 'area' | 'action' | 'title' | 'where' | 'key'>) => [t.area, t.action, t.title.replace(/\d[\d,.]*/g, '#'), t.key || t.where.replace(/:\d+(-\d+)?/g, '')].join('|');
 
 // Markdown for a PR comment or a CI job summary.
-export function toMarkdown(tasks, { repo, since, baseline }) {
-  const icon = { high: '🔴', medium: '🟠', low: '⚪' };
+export function toMarkdown(tasks: Task[], { since, baseline }: { repo?: string; since?: string; baseline?: unknown }) {
+  const icon: Record<Severity, string> = { high: '🔴', medium: '🟠', low: '⚪' };
   const shown = baseline ? tasks.filter((t) => t.new) : tasks;
   const scope = since ? ` in this change (since \`${/^[0-9a-f]{40}$/.test(since) ? since.slice(0, 7) : since}\`)` : '';
   // the hidden marker lets the GitHub Action find and update its own comment instead of posting a new one each push
   if (!shown.length) return `<!-- zomb -->\n### zomb: nothing new${scope} ✅\n`;
-  const count = (sev) => shown.filter((t) => t.severity === sev).length;
+  const count = (sev: Severity) => shown.filter((t) => t.severity === sev).length;
   const head = `<!-- zomb -->\n### zomb: ${plural(shown.length, baseline ? 'new finding' : 'finding')}${scope}\n\n${[count('high') && `${count('high')} high`, count('medium') && `${count('medium')} medium`, count('low') && `${count('low')} low`].filter(Boolean).join(' · ')}\n`;
   const rows = shown.slice(0, 30).map((t) => `| ${icon[t.severity]} ${t.severity} | ${t.area} | ${t.title.replace(/\|/g, '\\|')} | \`${t.where.replace(/`/g, "'")}\` |`);
   const more = shown.length > 30 ? `\n…and ${shown.length - 30} more. Run \`zomb\` locally for the full report.\n` : '';

@@ -5,13 +5,16 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { ui } from './terminal.js';
+import { ui } from './terminal.ts';
+import type { ScanData } from './types.ts';
+
+type Check = { label: string; cmd: string; args: string[] };
 
 const exec = promisify(execFile);
 const CHECK_TIMEOUT = 15 * 60 * 1000;
 
 // Which package manager the repo uses, from its lockfile.
-export function packageManager(root) {
+export function packageManager(root: string) {
   if (existsSync(path.join(root, 'pnpm-lock.yaml'))) return 'pnpm';
   if (existsSync(path.join(root, 'yarn.lock'))) return 'yarn';
   if (existsSync(path.join(root, 'bun.lock')) || existsSync(path.join(root, 'bun.lockb'))) return 'bun';
@@ -19,10 +22,10 @@ export function packageManager(root) {
 }
 
 // The project's own checks, from its package.json scripts, cheapest first.
-export function findChecks(scripts = {}, pm = 'npm', { tsc = false } = {}) {
-  const has = (name) => scripts[name] && !/no test specified/.test(scripts[name]);
-  const run = (name, label) => ({ label, cmd: pm, args: pm === 'npm' ? ['run', '--silent', name] : ['run', name] });
-  const checks = [];
+export function findChecks(scripts: Record<string, string> = {}, pm = 'npm', { tsc = false }: { tsc?: boolean } = {}): Check[] {
+  const has = (name: string) => scripts[name] && !/no test specified/.test(scripts[name]);
+  const run = (name: string, label: string): Check => ({ label, cmd: pm, args: pm === 'npm' ? ['run', '--silent', name] : ['run', name] });
+  const checks: Check[] = [];
   const type = ['typecheck', 'type-check', 'check-types', 'tsc'].find(has);
   if (type) checks.push(run(type, 'typecheck'));
   else if (tsc) checks.push({ label: 'typecheck', cmd: 'npx', args: ['tsc', '--noEmit'] });
@@ -34,14 +37,14 @@ export function findChecks(scripts = {}, pm = 'npm', { tsc = false } = {}) {
 
 // Tools load these from config files by name (compat.extends('next/core-web-vitals')), so "nothing imports it"
 // proves nothing. Never uninstall them automatically; list them for a human.
-export const isTooling = (name) =>
+export const isTooling = (name: string) =>
   /^(eslint|@eslint\/|eslint-(config|plugin)-|@typescript-eslint\/|typescript-eslint|prettier|@prettier\/|prettier-plugin-|stylelint|@commitlint\/|husky|lint-staged|@types\/|typescript$|postcss|autoprefixer|tailwindcss|@tailwindcss\/|babel-|@babel\/|@next\/eslint)/.test(name) || /(^|\/)(eslint|prettier|stylelint)-(config|plugin)/.test(name);
 
-const chunk = (list, size) => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, i * size + size));
+const chunk = <T>(list: T[], size: number): T[][] => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, i * size + size));
 
-export async function fix({ root, data, dryRun = false, noChecks = false, color = true, width = 80, log = console.log }) {
+export async function fix({ root, data, dryRun = false, noChecks = false, color = true, width = 80, log = console.log }: { root: string; data: ScanData; dryRun?: boolean; noChecks?: boolean; color?: boolean; width?: number; log?: (s: string) => void }): Promise<number> {
   const { dim, red, yellow, green, cyan, bold, n, plural, row, wrap, rule, frame } = ui({ width, color });
-  const git = (...args) => exec('git', args, { cwd: root, maxBuffer: 64 * 1024 * 1024 }).then((r) => r.stdout.trim());
+  const git = (...args: string[]) => exec('git', args, { cwd: root, maxBuffer: 64 * 1024 * 1024 }).then((r) => r.stdout.trim());
 
   const z = data.zombie;
   const files = z.files.filter((f) => !f.script && f.committed);
@@ -62,11 +65,11 @@ export async function fix({ root, data, dryRun = false, noChecks = false, color 
   if (packages.length) for (const l of wrap(dim('packages'), packages)) log(l);
   const scripts = z.files.filter((f) => f.script);
   const loose = z.files.filter((f) => !f.script && !f.committed);
-  const left = [
+  const left: [string, string[]][] = [
     [`${plural(scripts.length, 'script')} you may run by hand`, scripts.map((f) => f.path)],
     [`${plural(loose.length, 'dead file')} not committed yet`, loose.map((f) => f.path)],
     [`${plural(tooling.length, 'tooling package')} configs may load by name`, tooling],
-  ].filter(([, items]) => items.length);
+  ].filter(([, items]) => items.length) as [string, string[]][];
   if (left.length) log(`\n${rule('LEFT FOR YOU', dim('zomb won\'t touch these'))}`);
   for (const [label, items] of left) {
     log(row(`${yellow('!')} ${label}`));
@@ -85,13 +88,13 @@ export async function fix({ root, data, dryRun = false, noChecks = false, color 
   const checks = findChecks(pkg.scripts, pm, { tsc: existsSync(path.join(root, 'tsconfig.json')) && existsSync(path.join(root, 'node_modules', '.bin', 'tsc')) });
 
   // CI=1 keeps test runners out of watch mode
-  const runCheck = (c) =>
+  const runCheck = (c: Check): Promise<{ ok: boolean; tail?: string }> =>
     exec(c.cmd, c.args, { cwd: root, timeout: CHECK_TIMEOUT, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, CI: '1', FORCE_COLOR: '0' } }).then(
       () => ({ ok: true }),
       (e) => ({ ok: false, tail: `${e.stdout || ''}${e.stderr || ''}`.trim().split('\n').slice(-6).join('\n') }),
     );
   log(`\n${rule('CHECKS', dim('the ones that pass now judge every change'))}`);
-  const gates = [];
+  const gates: Check[] = [];
   for (const c of checks) {
     const r = await runCheck(c);
     log(row(`${r.ok ? green('✓') : yellow('✗')} ${c.label}`, r.ok ? '' : dim('already failing, ignored')));
@@ -102,7 +105,7 @@ export async function fix({ root, data, dryRun = false, noChecks = false, color 
     log(`    ${dim('Add one to package.json, or run')} ${cyan('zomb fix --no-checks')} ${dim('and review the branch yourself.')}\n`);
     return 1;
   }
-  const verify = async () => {
+  const verify = async (): Promise<{ ok: boolean; label?: string; tail?: string }> => {
     for (const c of gates) {
       const r = await runCheck(c);
       if (!r.ok) return { ok: false, label: c.label, tail: r.tail };
@@ -116,22 +119,22 @@ export async function fix({ root, data, dryRun = false, noChecks = false, color 
   await git('switch', '-q', '-c', branch);
   log(`\n${rule('CLEANING', cyan(branch))}`);
 
-  const undo = async (reinstall) => {
+  const undo = async (reinstall?: boolean) => {
     await git('reset', '-q', '--hard', 'HEAD'); // only our uncommitted batch: the tree was clean when we started
     if (reinstall) await exec(pm, ['install'], { cwd: root, maxBuffer: 64 * 1024 * 1024 }).catch(() => {});
   };
-  const commit = (message) => git('commit', '-q', '-m', message, '-m', 'Made by zomb fix: every change passed the project checks before it was kept.');
+  const commit = (message: string) => git('commit', '-q', '-m', message, '-m', 'Made by zomb fix: every change passed the project checks before it was kept.');
 
   // Apply a batch, check it, keep it or undo it. On failure, retry the items one by one and keep the ones that pass.
-  const done = { files: [], lines: 0, exports: false, packages: [] };
-  const kept = [];
-  async function batch(items, apply, { reinstall = false, one = (x) => x } = {}) {
+  const done: { files: ScanData['zombie']['files']; lines: number; exports: boolean; packages: string[] } = { files: [], lines: 0, exports: false, packages: [] };
+  const kept: { item: string; why: string }[] = [];
+  async function batch<T>(items: T[], apply: (list: T[]) => Promise<unknown>, { reinstall = false, one = (x: T) => String(x) }: { reinstall?: boolean; one?: (x: T) => string } = {}): Promise<T[]> {
     await apply(items);
     let r = gates.length ? await verify() : { ok: true };
     if (r.ok) return items;
     await undo(reinstall);
     if (items.length === 1) return kept.push({ item: one(items[0]), why: `${r.label} failed` }), [];
-    const passed = [];
+    const passed: T[] = [];
     for (const item of items) {
       await apply([item]);
       r = await verify();

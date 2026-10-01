@@ -3,13 +3,17 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { lineShortcuts } from './diff.js';
-import { originalOf, packageOf, sameJob, isTest } from './score.js';
-import { findSecrets, publicSecretNames, findDangerous, isEnvFile, routeFacts } from './security.js';
-import { breaks, readBlueprint, FILE as BLUEPRINT } from './blueprint.js';
+import { lineShortcuts } from './diff.ts';
+import { originalOf, packageOf, sameJob, isTest } from './score.ts';
+import { findSecrets, publicSecretNames, findDangerous, isEnvFile, routeFacts } from './security.ts';
+import { breaks, readBlueprint, FILE as BLUEPRINT } from './blueprint.ts';
+import type { BrokenRule, Rules } from './types.ts';
+
+/** The Write / Edit / MultiEdit payload Claude Code hands a PreToolUse hook. */
+type ToolInput = { file_path: string; content?: string; old_string?: string; new_string?: string; replace_all?: boolean; edits?: { old_string: string; new_string: string; replace_all?: boolean }[] };
 
 const CODE = /\.[cm]?[jt]sx?$/;
-const FIX = {
+const FIX: Record<string, string> = {
   'Silences the type checker': 'Fix the type error instead.',
   'Turns off a lint rule': 'Fix what the rule flags, or add `-- <reason>` to the disable comment.',
   'Focuses one test, so CI silently skips the rest': 'Remove .only so the whole suite runs.',
@@ -18,20 +22,20 @@ const FIX = {
   'Casts to any': 'Give it a real type.',
   'Swallows errors in an empty catch': 'Handle or log the error.',
 };
-const RULE_FIX = { libraries: 'Use that one instead of adding another.', folders: 'Create the file there instead.', naming: 'Name the file to match.', imports: 'Use the alias.', api: 'Add the auth check the other routes use, or `// zomb-allow: public` if it is public on purpose.', files: 'Split the file by job instead of growing it.' };
-const ruleBreak = (b) => `blueprint: ${b.why}. ${RULE_FIX[b.rule.split('.')[0]]} (The rules are in ${BLUEPRINT}.)`;
+const RULE_FIX: Record<string, string> = { libraries: 'Use that one instead of adding another.', folders: 'Create the file there instead.', naming: 'Name the file to match.', imports: 'Use the alias.', api: 'Add the auth check the other routes use, or `// zomb-allow: public` if it is public on purpose.', files: 'Split the file by job instead of growing it.' };
+const ruleBreak = (b: BrokenRule) => `blueprint: ${b.why}. ${RULE_FIX[b.rule.split('.')[0]]} (The rules are in ${BLUEPRINT}.)`;
 
 // Lines that exist after the edit but not before: the only ones this edit is responsible for.
-function addedLines(input, root) {
+function addedLines(input: ToolInput, root: string) {
   const file = path.resolve(root, input.file_path);
   const before = existsSync(file) ? readFileSync(file, 'utf8') : null;
-  const edits = input.edits || (input.old_string !== undefined ? [input] : null);
+  const edits: { old_string: string; new_string: string; replace_all?: boolean }[] | null = input.edits || (input.old_string !== undefined ? [input as { old_string: string; new_string: string; replace_all?: boolean }] : null);
   if (!edits) {
     // Write: whole content; lines already in the file aren't new
     const old = new Set((before || '').split('\n'));
-    return { isNew: before === null, before, lines: input.content.split('\n').map((text, i) => ({ text, line: i + 1 })).filter((l) => !old.has(l.text)) };
+    return { isNew: before === null, before, lines: (input.content || '').split('\n').map((text, i) => ({ text, line: i + 1 })).filter((l) => !old.has(l.text)) };
   }
-  const lines = [];
+  const lines: { text: string; line: number }[] = [];
   for (const e of edits) {
     const old = new Set(e.old_string.split('\n'));
     const at = before ? before.slice(0, Math.max(before.indexOf(e.old_string), 0)).split('\n').length : 1;
@@ -41,25 +45,25 @@ function addedLines(input, root) {
 }
 
 // The whole file as it will be after this edit
-function afterEdit(input, before) {
+function afterEdit(input: ToolInput, before: string | null) {
   if (input.content !== undefined) return input.content;
   let text = before || '';
-  for (const e of input.edits || [input]) text = e.replace_all ? text.split(e.old_string).join(e.new_string) : text.replace(e.old_string, () => e.new_string);
+  for (const e of input.edits || [input as { old_string: string; new_string: string; replace_all?: boolean }]) text = e.replace_all ? text.split(e.old_string).join(e.new_string) : text.replace(e.old_string, () => e.new_string);
   return text;
 }
 
 // input: the hook's tool_input { file_path, content | old_string/new_string | edits }. -> { deny:[], warn:[] } of "line N: …" strings
-export function check(input, root) {
-  const deny = [];
-  const warn = [];
+export function check(input: ToolInput, root: string): { deny: string[]; warn: string[] } {
+  const deny: string[] = [];
+  const warn: string[] = [];
   const rel = path.relative(root, path.resolve(root, input.file_path));
   if (!input.file_path || rel.startsWith('..') || /(^|\/)(node_modules|\.git|\.zomb)\//.test(rel)) return { deny, warn };
   const { isNew, before, lines } = addedLines(input, root);
-  let rules = null;
+  let rules: Rules | null = null;
   try {
     rules = readBlueprint(root);
   } catch {} // a broken blueprint must not block every edit; the scan reports it
-  const allowed = (text) => /zomb-allow/.test(text);
+  const allowed = (text: string) => /zomb-allow/.test(text);
   const code = CODE.test(rel);
 
   // keys and browser-exposed secrets, in any file except the .env files that are meant to hold them
@@ -83,6 +87,7 @@ export function check(input, root) {
     for (const d of findDangerous(l.text, { shell: true })) (d.severity === 'high' ? deny : warn).push(`line ${l.line}: ${d.kind.toLowerCase()}. ${d.severity === 'high' ? 'Use parameters or an argument array instead of building the string.' : ''}`.trim());
   }
 
+  const rulesNow = rules; // narrowed for the callbacks below
   // a second version of a file that already exists: edit the original instead
   const original = isNew && !isTest(rel) && originalOf(rel);
   if (original && existsSync(path.resolve(root, original))) deny.push(`${rel} looks like a new version of ${original}, which already exists. Edit ${original} instead; keeping both leaves zombie code.`);
@@ -120,35 +125,35 @@ export function check(input, root) {
     deny.push(...breaks(rules, { file: rel, deep, placed: false }).map(ruleBreak));
     // an API route that changes data without an auth check: blocked when this edit causes it, noted when it was already so
     const route = routeFacts(rel, afterEdit(input, before));
-    const open = (facts) => breaks(rules, { file: rel, route: facts, placed: false });
-    if (route && open(route).length) (isNew || !open(routeFacts(rel, before)).length ? deny : warn).push(...open(route).map(ruleBreak));
+    const open = (facts: ReturnType<typeof routeFacts>) => breaks(rulesNow!, { file: rel, route: facts, placed: false });
+    if (route && open(route).length) (isNew || !open(before === null ? null : routeFacts(rel, before)).length ? deny : warn).push(...open(route).map(ruleBreak));
   }
 
   // growing past the line limit: say so once, when it crosses (a blueprint limit blocks, the default one only notes)
-  const max = rules?.files?.maxLines || 500;
+  const max = Number(rules?.files?.maxLines || 500);
   const after = isNew ? (input.content || '').split('\n').length : (before || '').split('\n').length + lines.length;
   if (after > max && (isNew || (before || '').split('\n').length <= max)) (rules?.files?.maxLines ? deny : warn).push(rules?.files?.maxLines ? ruleBreak({ rule: 'files.maxLines', why: `${rel} would be about ${after} lines, over the ${max}-line limit` }) : `${rel} is now about ${after} lines. Consider splitting it by job.`);
 
   return { deny, warn };
 }
 
-const readJson = (file) => {
+const readJson = (file: string): Record<string, any> => {
   try {
     return JSON.parse(readFileSync(file, 'utf8'));
   } catch {
     return {};
   }
 };
-const quiet = { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8', timeout: 3000 };
-function ignored(rel, root) {
+const quiet = { stdio: ['ignore', 'pipe', 'ignore'] as ['ignore', 'pipe', 'ignore'], encoding: 'utf8' as const, timeout: 3000 };
+function ignored(rel: string, root: string) {
   try {
-    execFileSync('git', ['check-ignore', '-q', rel], { ...quiet, cwd: root });
+    execFileSync('git', ['check-ignore', '-q', rel], { ...quiet, cwd: root, encoding: 'utf8' });
     return true;
   } catch {
     return false;
   }
 }
-function grep(pattern, root, except) {
+function grep(pattern: string, root: string, except: string): string | null {
   try {
     return execFileSync('git', ['grep', '-l', '--untracked', '-E', '-e', pattern, '--', '*.ts', '*.tsx', '*.js', '*.jsx', '*.mjs', `:!${except}`, ':!node_modules'], { ...quiet, cwd: root }).split('\n')[0] || null;
   } catch {
@@ -167,7 +172,7 @@ export async function main() {
     const root = process.env.CLAUDE_PROJECT_DIR || hook.cwd || process.cwd();
     const { deny, warn } = check(hook.tool_input, root);
     const file = path.relative(root, path.resolve(root, hook.tool_input.file_path));
-    const list = (items) => items.map((i) => `  - ${i}`).join('\n');
+    const list = (items: string[]) => items.map((i) => `  - ${i}`).join('\n');
     if (deny.length) {
       const reason = `zomb guard stopped this edit to ${file}:\n${list(deny)}${warn.length ? `\nAlso:\n${list(warn)}` : ''}\nFix these and try again. If one is truly needed, add \`// zomb-allow: <why>\` on that line and tell the user why.`;
       // systemMessage is what the user sees; the reason goes to the agent
