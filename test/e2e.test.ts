@@ -79,6 +79,13 @@ test('zomb --json finds every planted mistake', () => {
     run('--save-baseline');
     assert.equal(run('--fail-on', 'high', '--json').code, 0, 'known problems pass once they are in the baseline');
 
+    // `zomb show <n>` explains the finding the scan numbered n
+    const show = (...args) => execFileSync(process.execPath, [cli, 'show', ...args, dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const out1 = show('1');
+    assert.ok(out1.includes(JSON.parse(run('--json').out).tasks[0].title) && out1.includes('finding 1 of'), out1);
+    assert.throws(() => show('999'), /pick 1 to/);
+    assert.throws(() => show('one'), /takes a finding number/);
+
     // A change that adds a new key and takes shortcuts.
     writeFileSync(path.join(dir, 'lib/github.ts'), `export const token = "${['ghp', 'Zq9rT4vWxyKm2Lp8Nc1Hs6Kd3Vb7Qe5Tr0Uy'].join('_')}";\n`);
     writeFileSync(path.join(dir, 'lib/db.ts'), files['lib/db.ts'] + '// @ts-ignore\nexport const n: number = "1";\n');

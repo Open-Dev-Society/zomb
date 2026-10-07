@@ -13,6 +13,7 @@ It prints a summary and writes a single HTML report to `.zomb/report.html` (git-
 
 ```bash
 zomb --all                # every finding in the terminal, not just the top 5
+zomb show 3               # finding 3 from the list in full: where, why, how to fix
 zomb --json               # an ordered to-do list for an AI agent or CI
 zomb --since main         # only what your branch changed, plus the shortcuts it took
 zomb --since HEAD         # only your uncommitted work

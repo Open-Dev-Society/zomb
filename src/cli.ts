@@ -10,7 +10,7 @@ import { parseAll, dependents, touches, clones, orphanRoutes } from './signals.t
 import { scanRepo, npmAudit, openRoute, hasAuthSignal, securityFindings } from './security.ts';
 import { renderReport } from './report.ts';
 import { toTasks, fingerprint, toMarkdown } from './tasks.ts';
-import { render, spinner, ui, renderBlueprint } from './terminal.ts';
+import { render, loader, ui, renderBlueprint, renderHelp, renderTask } from './terminal.ts';
 import { infer, toRules, breaks, toYaml, readBlueprint, FILE as BLUEPRINT } from './blueprint.ts';
 import { fix } from './fix.ts';
 import { benchmark } from './benchmark.ts';
@@ -21,7 +21,7 @@ const why = (e: unknown) => (e as { stderr?: string; message?: string }) || {};
 import { changesSince, scopeTo, shortcuts } from './diff.ts';
 
 const paint = (tty) => ui({ width: process.stdout.columns || 80, color: Boolean(tty) && !process.env.NO_COLOR });
-const { dim, red, yellow, green, cyan } = paint(process.stderr.isTTY);
+const { dim, red, yellow, green } = paint(process.stderr.isTTY);
 const log = (msg) => process.stderr.write(`${dim('zomb')} ${msg}\n`);
 const fail = (msg) => (process.stderr.write(`${red('✗')} ${msg}\n`), process.exit(1));
 
@@ -48,34 +48,14 @@ try {
 }
 const { values: opts, positionals } = args;
 if (opts.help) {
-  const { bold, dim, cyan, rule } = paint(process.stdout.isTTY);
-  const cmd = (c, what) => `  ${cyan(c.padEnd(26))}${what}`;
-  console.log(`
-${bold('zomb')}  ${dim('a health check for codebases written with AI')}
-
-${rule('COMMANDS')}
-${cmd('zomb [path]', 'scan: security, zombie code, sprawl, architecture')}
-${cmd('zomb fix [path]', 'delete dead code on a branch, gated by your build')}
-${cmd('zomb blueprint [path]', 'infer the rules this code follows; --write saves them')}
-${cmd('zomb guard', 'Claude Code hook: blocks bad edits as they happen')}
-
-${rule('SCAN')}
-${cmd('--all', 'every finding, not just the top 5')}
-${cmd('--since <ref>', 'only what changed since a branch or commit')}
-${cmd('--json', 'an ordered to-do list for an agent or CI')}
-${cmd('--markdown', 'a pull request comment')}
-${cmd('--out <file>', 'where to write the HTML report')}
-${cmd('--save-baseline', 'accept today\'s findings; only new ones fail')}
-${cmd('--fail-on <level>', 'exit 1 on new high, medium or low findings')}
-
-${rule('FIX')}
-${cmd('--dry-run', 'show the plan, change nothing')}
-${cmd('--no-checks', 'skip the typecheck, lint, test and build gate')}
-`);
+  const { version } = createRequire(import.meta.url)('../package.json');
+  console.log(renderHelp({ width: process.stdout.columns || 80, color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR, version }));
   process.exit(0);
 }
-// `zomb fix [path]` does the safe clean-up, `zomb blueprint [path]` proposes rules; plain `zomb [path]` reports
-const command = ['fix', 'blueprint'].includes(positionals[0]) ? positionals.shift() : 'scan';
+// `zomb fix [path]` does the safe clean-up, `zomb blueprint [path]` proposes rules, `zomb show <n> [path]` explains one finding; plain `zomb [path]` reports
+const command = ['fix', 'blueprint', 'show'].includes(positionals[0]) ? positionals.shift() : 'scan';
+const pick = command === 'show' ? Number(positionals.shift()) : 0;
+if (command === 'show' && !(Number.isInteger(pick) && pick > 0)) fail(`zomb show takes a finding number from the scan, like ${green('zomb show 1')}`);
 const LEVELS = { high: ['high'], medium: ['high', 'medium'], low: ['high', 'medium', 'low'] };
 const exec = promisify(execFile);
 const sh = (cmd, args, cwd) => exec(cmd, args, { cwd, maxBuffer: 512 * 1024 * 1024 }).then((r) => r.stdout);
@@ -97,9 +77,8 @@ async function knip() {
     // A config Knip can't load (vitest.config.ts without vitest installed) hides entry points, so its partial output lies.
     const whyLine = `${why(e).stderr || why(e).message}`.split('\n').find((l) => l.startsWith('ERROR')) || String(why(e).message).split('\n')[0];
     const hint = existsSync(path.join(root, 'node_modules')) ? '' : ' Run npm install in the repo first: Knip needs dependencies to read config files.';
-    const error = `${whyLine.replace(/^ERROR:\s*/, '')}.${hint}`;
-    process.stderr.write(`${yellow('!')} Knip failed, so zombie detection is skipped: ${error}\n`);
-    return { issues: [], error };
+    // printed once the loader is gone: a line written while it redraws would be drawn over
+    return { issues: [], error: `${whyLine.replace(/^ERROR:\s*/, '')}.${hint}` };
   }
 }
 
@@ -146,7 +125,8 @@ const all = [...new Set((await sh('git', ['ls-files', '--cached', '--others', '-
 const tracked = new Set((await sh('git', ['ls-files'], root)).split('\n').filter(Boolean));
 const files = all.filter((f) => CODE.test(f) && !/\.d\.[cm]?ts$/.test(f));
 if (!files.length) fail(`no JS/TS files tracked in ${root}`);
-const spin = opts.json || opts.markdown ? { step() {}, stop() {} } : spinner(`scanning ${files.length} files`);
+const CHECKS: [string, string][] = [['imports', 'what nothing uses'], ['history', 'who wrote what'], ['code', `parse ${files.length} files`], ['copy-paste', 'repeated blocks'], ['routes', 'API routes and auth'], ['secrets', 'keys and .env files'], ['packages', 'npm audit']];
+const spin = opts.json || opts.markdown ? { step() {}, stop() {} } : loader({ title: path.basename(root), label: `scanning ${files.length} files`, steps: CHECKS, color: !process.env.NO_COLOR });
 if (!process.stderr.isTTY) log(`scanning ${files.length} JS/TS files in ${root}`);
 const track = (name, p) => p.then((v) => (spin.step(name), v));
 
@@ -180,6 +160,7 @@ for (;;) {
 }
 const zombieFiles = [...unused, ...onlyTests].filter((f) => !refs.get(f) && !live.has(f));
 spin.stop();
+if (knipOut.error) process.stderr.write(`${yellow('!')} Knip failed, so zombie detection is skipped: ${knipOut.error}\n`);
 const byAgent = await authorship(zombieFiles, agentOf);
 const zombies = zombieFiles
   .map((f) => {
@@ -207,6 +188,9 @@ const security = securityFindings({ ...scan, dangerous, openRoutes, audit });
 // ---------- sprawl ----------
 const months = growth(history);
 const recent = months.filter((m) => Date.now() - Date.parse(`${m.month}-01`) < 92 * 864e5);
+// lines added per day (the author's own date), for the activity calendar
+const days = new Map<string, number>();
+for (const c of history) days.set(c.date.slice(0, 10), (days.get(c.date.slice(0, 10)) || 0) + c.files.reduce((s, f) => s + f.added, 0));
 const packages = new Map();
 for (const [file, p] of parsed) if (!isTest(file)) for (const pkg of p.packages) packages.set(pkg, [...(packages.get(pkg) || []), file]);
 const dupes = copies && copies.sort((x, y) => y.lines - x.lines);
@@ -251,6 +235,14 @@ if (opts.since) {
 }
 const tasks = toTasks(data);
 
+// `zomb show <n>`: the same numbers the scan prints
+if (command === 'show') {
+  const t = tasks.find((x) => x.id === pick);
+  if (!t) fail(tasks.length ? `there ${tasks.length === 1 ? 'is 1 finding' : `are ${tasks.length} findings`}: pick 1 to ${tasks.length}` : 'the scan found nothing to show');
+  else console.log(renderTask(t, tasks.length, { repo: data.repo, width: process.stdout.columns || 80, color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR }));
+  process.exit(0);
+}
+
 if (command === 'blueprint') {
   const proposal = infer(parsed, { middlewareAuth });
   const today = [...parsed].filter(([f]) => !isTest(f)).flatMap(([file, p]) => breaks(toRules(proposal), { file, packages: p.packages, deep: p.deep, route: middlewareAuth ? null : p.route, lines: p.lines }).map((b) => ({ file, ...b })));
@@ -272,7 +264,7 @@ const baselinePath = path.join(root, '.zomb', 'baseline.json');
 if (opts['save-baseline']) {
   await mkdir(path.dirname(baselinePath), { recursive: true });
   await writeFile(baselinePath, `${JSON.stringify({ version: 1, commit: data.commit, saved: data.date, fingerprints: [...new Set(tasks.map(fingerprint))].sort() }, null, 2)}\n`);
-  process.stderr.write(`${green('✓')} saved ${tasks.length} current findings to ${cyan('.zomb/baseline.json')}\n  ${dim('From now on only new ones fail --fail-on. Commit this file.')}\n`);
+  process.stderr.write(`${green('✓')} saved ${tasks.length} current findings to ${green('.zomb/baseline.json')}\n  ${dim('From now on only new ones fail --fail-on. Commit this file.')}\n`);
   process.exit(0);
 }
 const baseline = existsSync(baselinePath) ? new Set(JSON.parse(await readFile(baselinePath, 'utf8')).fingerprints) : null;
@@ -320,6 +312,7 @@ const lines = render(data, tasks, {
   audit,
   knipError: knipOut.error,
   recent,
+  days,
   out: path.relative(process.cwd(), out) || out,
   failing,
   failOn: opts['fail-on'],

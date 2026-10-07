@@ -171,7 +171,8 @@ test('scopeTo keeps only what the change touched', async () => {
 });
 
 test('terminal output never wraps, at any width', async () => {
-  const { render, visible } = await import('../src/terminal.ts');
+  const { render, renderHelp, visible } = await import('../src/terminal.ts');
+  const { toTasks } = await import('../src/tasks.ts');
   const long = 'src/components/features/dashboard/analytics/really-long-folder-name/SomeVeryLongComponentName.tsx';
   const data = {
     repo: 'a-repo-with-a-fairly-long-name', files: 1234, lines: 123456,
@@ -181,9 +182,13 @@ test('terminal output never wraps, at any width', async () => {
     sprawl: { dupes: [{ lines: 30, a: { file: long }, b: { file: long } }], names: [{ name: 'formatCurrencyWithLocaleAndFallbackSymbol', files: [long, long] }], versions: [{ path: long, original: long }, { path: 'components/ov2/', files: 75 }], overlaps: [{ job: 'icon sets', libraries: [{ name: '@phosphor-icons/react', files: 40 }, { name: 'react-icons', files: 3 }, { name: '@heroicons/react', files: 1 }] }] },
     architecture: { cycles: [[long, long, long, long]], big: [{ file: long, lines: 1727 }], deep: [{ file: long, count: 3 }], shared: ['src/lib', 'src/utils', 'app/helpers', 'packages/shared/src/core'], naming: [] },
   };
-  const tasks = [{ safe: true }, { safe: false }];
+  const tasks = toTasks(data as unknown as ScanData);
+  const days = new Map([[new Date().toLocaleDateString('en-CA'), 900], ['2026-01-02', 40]]);
   for (const width of [50, 60, 80, 120]) {
-    const lines = render(data as unknown as ScanData, tasks as Task[], { width, color: true, all: true, recent: [{ month: '2026-09', added: 34628, deleted: 15120 }], out: `/Users/someone/projects/${long}/.zomb/report.html`, failOn: 'high', failing: [1] });
+    const lines = [
+      ...render(data as unknown as ScanData, tasks, { width, color: true, all: true, recent: [{ month: '2026-09', added: 34628, deleted: 15120 }], days, out: `/Users/someone/projects/${long}/.zomb/report.html`, failOn: 'high', failing: [1] }),
+      ...renderHelp({ width, version: '1.0.0' }).split('\n'),
+    ];
     const widest = Math.max(...lines.map(visible));
     assert.ok(widest <= Math.max(48, Math.min(width - 1, 80)), `width ${width}: a line is ${widest} columns`);
     assert.ok(lines.every((l) => !/ $/.test(l.replace(/\x1b\[[0-9;]*m/g, ''))), 'no trailing spaces');
