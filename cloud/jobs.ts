@@ -42,14 +42,17 @@ async function checkout(cloneUrl: string, token: string, refspecs: string[], ref
     return { dir, config, run, cleanup: () => rm(root, { recursive: true, force: true }) };
   } catch (e) {
     await rm(root, { recursive: true, force: true });
+    // execFile puts the command in its message, and the fetch URL carries the token: it would reach the log and the check run
+    if (token) for (const k of ['message', 'cmd', 'stderr'] as const) if (typeof (e as any)[k] === 'string') (e as any)[k] = (e as any)[k].replaceAll(token, '***');
     throw e;
   }
 }
 
 // zomb --json on the checkout; --fail-on exits 1 but still prints the result
 async function scan(co: { dir: string; run: (cmd: string, args: string[], timeout?: number) => Promise<{ stdout: string }> }, args: string[]): Promise<Result> {
-  const out = await co.run(process.execPath, [CLI, co.dir, '--json', ...args]).then((r) => r.stdout, (e: { stdout?: string }) => e.stdout);
-  if (!out) throw new Error('zomb produced no result');
+  let why = '';
+  const out = await co.run(process.execPath, [CLI, co.dir, '--json', ...args]).then((r) => r.stdout, (e: { stdout?: string; stderr?: string }) => ((why = e.stderr?.trim().split('\n').at(-1) || ''), e.stdout));
+  if (!out) throw new Error(why.replace(co.dir, 'the repo') || 'zomb produced no result');
   return JSON.parse(out);
 }
 
@@ -92,6 +95,21 @@ export function jobs({ gh, db, appId, log = console.error }: { gh: any; db: any;
     }
   }
 
+  // The first scan, as soon as the app is installed, so the dashboard has numbers before the next push.
+  async function first(repo: any) {
+    const info = await gh.as(repo.installation)('GET', `/repos/${repo.name}`);
+    const co = await checkout(info.clone_url, await gh.installationToken(repo.installation), [`+refs/heads/${info.default_branch}:refs/remotes/origin/${info.default_branch}`], `origin/${info.default_branch}`);
+    try {
+      record(repo.id, null, 'install', await scan(co, []));
+    } catch (e) {
+      // HTML or Python only: nothing for zomb to read, so remember that instead of retrying on every start
+      if (!/no JS\/TS files/.test((e as Error).message)) throw e;
+      db.prepare('UPDATE repos SET note = ? WHERE id = ?').run('no JavaScript or TypeScript', repo.id);
+    } finally {
+      await co.cleanup();
+    }
+  }
+
   // The weekly clean-up: one issue with zomb's task list, kept up to date, handed to the team's agent.
   async function weekly(repo: any) {
     const api = gh.as(repo.installation);
@@ -116,7 +134,7 @@ export function jobs({ gh, db, appId, log = console.error }: { gh: any; db: any;
     }
   }
 
-  return { pullRequest, push, weekly };
+  return { pullRequest, push, first, weekly };
 }
 
 // The issue an agent (or a person) works from: the safe clean-up first, then what needs a decision.

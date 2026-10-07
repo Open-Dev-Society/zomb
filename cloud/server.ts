@@ -39,6 +39,8 @@ export function start(cfg: ReturnType<typeof config> = config(), { log = console
   db.exec(`CREATE TABLE IF NOT EXISTS repos (id INTEGER PRIMARY KEY, installation INTEGER NOT NULL, name TEXT NOT NULL, weekly_at TEXT);
     CREATE TABLE IF NOT EXISTS scans (id INTEGER PRIMARY KEY AUTOINCREMENT, repo INTEGER NOT NULL, sha TEXT, kind TEXT, at TEXT, summary TEXT, failing INTEGER, tasks INTEGER);
     CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, login TEXT, token TEXT, installations TEXT, expires INTEGER);`);
+  // why a repo has no scan, when it never can have one (no JS/TS); added after the first release
+  if (!db.prepare("SELECT 1 FROM pragma_table_info('repos') WHERE name = 'note'").get()) db.exec('ALTER TABLE repos ADD COLUMN note TEXT');
   // built either way: they only make closures, and `ready` gates every call that needs real credentials
   const ready = Boolean(cfg.appId && cfg.privateKey && cfg.webhookSecret);
   const gh = github(cfg);
@@ -59,7 +61,10 @@ export function start(cfg: ReturnType<typeof config> = config(), { log = console
   const enqueue = (label: string, fn: () => Promise<unknown>) => (queue.push([label, fn]), pump());
 
   const addRepos = (installation: number, repos: { id: number; full_name: string }[]) => {
-    for (const r of repos) db.prepare('INSERT INTO repos (id, installation, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET installation = excluded.installation, name = excluded.name').run(r.id, installation, r.full_name);
+    for (const r of repos) {
+      db.prepare('INSERT INTO repos (id, installation, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET installation = excluded.installation, name = excluded.name').run(r.id, installation, r.full_name);
+      enqueue(`${r.full_name} first scan`, () => work.first({ id: r.id, installation, name: r.full_name }));
+    }
   };
   function onEvent(event: string | string[] | undefined, p: any) {
     if (event === 'installation' && p.action === 'deleted') db.prepare('DELETE FROM repos WHERE installation = ?').run(p.installation.id);
@@ -77,6 +82,9 @@ export function start(cfg: ReturnType<typeof config> = config(), { log = console
     for (const repo of due) enqueue(`${repo.name} weekly`, () => work.weekly(repo));
   };
   const timer = ready ? setInterval(weeklyDue, 3600_000) : undefined;
+  // repos installed before their first scan ran (or whose first scan a restart dropped) catch up on start
+  // ponytail: a repo that fails for another reason (empty, no default branch) is retried on every start
+  if (ready) for (const repo of db.prepare('SELECT * FROM repos WHERE note IS NULL AND id NOT IN (SELECT repo FROM scans)').all() as any[]) enqueue(`${repo.name} first scan`, () => work.first(repo));
 
   // ---------- sessions: GitHub sign-in, so people see only the repos their installations cover
   const cookies = (req: { headers: Record<string, any> }): Record<string, string> => Object.fromEntries((req.headers.cookie || '').split(';').map((c) => c.trim().split('=')).filter(([k]) => k));
@@ -304,6 +312,7 @@ tbody tr:hover td{background:var(--paper)}
 .repo:hover{text-decoration:underline;text-underline-offset:3px}
 .when{display:block;font:11px/1.5 var(--mono);color:var(--mute)}
 td .zero{color:var(--line-2)}
+td.pending{text-align:left;font:12px/1 var(--mono);color:var(--mute)}
 td .hit{color:var(--high);font-weight:600}
 td .warn{color:var(--warn);font-weight:600}
 /* one quiet action per row: 24 bordered buttons shout louder than the data */
@@ -419,8 +428,8 @@ ${fig(deletes === null ? '—' : num(deletes), 'Deleted per 100 added', deletes 
       const tick = !r.last ? 'transparent' : r.last.security.high ? 'var(--high)' : r.last.blueprint ? 'var(--warn)' : r.last.zombie.lines ? 'var(--line-2)' : 'var(--accent)';
       return `<tr><td class="gut"><span style="background:${tick}"></span></td>
 <td class="nm" title="${esc(r.name)}"><a class="repo" href="${esc(cfg.web)}/${esc(r.name)}">${esc(r.name)}</a>
-<span class="when">${r.at ? `scanned ${esc(String(r.at).slice(0, 10))}` : 'waiting for the first push'}${r.weekly_at ? ` · cleaned ${esc(String(r.weekly_at).slice(0, 10))}` : ''}</span></td>
-${cell(r, (s) => s.security.high, { trend: true, tone: 'hit' })}${cell(r, (s) => s.zombie.lines, { trend: true })}${cell(r, (s) => s.zombie.packages)}${cell(r, (s) => s.architecture.cycles + s.architecture.bigFiles)}${cell(r, (s) => s.blueprint || 0, { tone: 'warn' })}
+<span class="when">${r.at ? `scanned ${esc(String(r.at).slice(0, 10))}` : r.note ? 'not scanned' : 'not scanned yet'}${r.weekly_at ? ` · cleaned ${esc(String(r.weekly_at).slice(0, 10))}` : ''}</span></td>
+${!r.last ? `<td colspan="5" class="pending">${r.note ? `Nothing to scan: ${esc(r.note)}` : 'Not scanned yet'}</td>` : `${cell(r, (s) => s.security.high, { trend: true, tone: 'hit' })}${cell(r, (s) => s.zombie.lines, { trend: true })}${cell(r, (s) => s.zombie.packages)}${cell(r, (s) => s.architecture.cycles + s.architecture.bigFiles)}${cell(r, (s) => s.blueprint || 0, { tone: 'warn' })}`}
 <td><div class="act"><form method="post" action="/repos/${r.id}/copilot"><button class="handoff">Hand to Copilot</button></form></div></td></tr>`;
     })
     .join('');
