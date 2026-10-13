@@ -1,5 +1,6 @@
 // The work behind each GitHub event: check the code out, run zomb on it, and report back on GitHub.
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -29,8 +30,8 @@ const WEEKLY = '<!-- zomb-weekly -->';
 const INSTALL = { npm: ['ci'], pnpm: ['install', '--frozen-lockfile'], yarn: ['install', '--frozen-lockfile'], bun: ['install', '--frozen-lockfile'] };
 
 // Check out a repo into a fresh folder. The token is only ever in the fetch URL, never in .git/config,
-// and nothing the repo runs sees the server's environment.
-// ponytail: jobs are child processes of the server; give each its own container before scanning code you don't trust
+// and nothing the repo runs sees the server's environment. Fetching stays here, so with the sandbox on
+// the token never enters the container: only the checkout does.
 async function checkout(cloneUrl: string, token: string, refspecs: string[], ref: string) {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'zomb-cloud-')));
   const dir = path.join(root, 'repo');
@@ -45,10 +46,10 @@ async function checkout(cloneUrl: string, token: string, refspecs: string[], ref
     await run('git', ['checkout', '-q', ref]);
     // Knip needs the dependencies; --ignore-scripts so installing never runs the repo's own code
     const pm = packageManager(dir);
-    if (['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb'].some((f) => existsSync(path.join(dir, f)))) await run(pm, [...INSTALL[pm], '--ignore-scripts']).catch(() => {});
+    const install = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb'].some((f) => existsSync(path.join(dir, f))) ? [pm, ...INSTALL[pm], '--ignore-scripts'] : null;
     const file = path.join(dir, '.zomb', 'config.yml');
     const config = { 'fail-on': 'high', weekly: true, handoff: 'none', ...(existsSync(file) ? parse(readFileSync(file, 'utf8')) : {}) };
-    return { root, dir, config, run, cleanup: () => rm(root, { recursive: true, force: true }) };
+    return { root, dir, config, run, install, cleanup: () => rm(root, { recursive: true, force: true }) };
   } catch (e) {
     await rm(root, { recursive: true, force: true });
     // execFile puts the command in its message, and the fetch URL carries the token: it would reach the log and the check run
@@ -56,16 +57,76 @@ async function checkout(cloneUrl: string, token: string, refspecs: string[], ref
     throw e;
   }
 }
+type Checkout = Awaited<ReturnType<typeof checkout>>;
+
+/** ZOMB_SANDBOX=docker: install and scan each checkout in a throwaway container instead of as the server's user. */
+export type Sandbox = { image: string; network?: string } | null;
+export const sandboxFrom = (env: Record<string, string | undefined>): Sandbox => (env.ZOMB_SANDBOX === 'docker' ? { image: env.ZOMB_SANDBOX_IMAGE || 'zomb-cloud', network: env.ZOMB_SANDBOX_NETWORK } : null);
+const WORK = '/work';
+
+// `docker run` for one job. The checkout arrives as a tar on stdin, so this works the same when the server
+// itself runs in a container and talks to the host's Docker (a bind mount would name a path on the host).
+// Arguments reach the script as "$@", never through the shell; only the install command, built from fixed words, is inlined.
+export function sandboxArgs({ name, image, network, install, args }: { name: string; image: string; network?: string; install: string[] | null; args: string[] }) {
+  // macOS tar adds extended-attribute headers the image's GNU tar would warn about on every scan
+  const script = ['set -e', `tar -x --warning=no-unknown-keyword -C ${WORK}`, `cd ${WORK}/repo`, ...(install ? [`${install.join(' ')} >/dev/null 2>&1 || true`] : []), `exec node /app/src/cli.ts ${WORK}/repo --json "$@"`].join('; ');
+  return [
+    'run', '--rm', '-i', '--name', name,
+    '--user', '1000:1000', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+    '--memory', '2g', '--cpus', '2', '--pids-limit', '512',
+    ...(network ? ['--network', network] : []),
+    '-e', `HOME=${WORK}/home`, '-e', 'CI=1', '-e', 'NO_COLOR=1',
+    '--entrypoint', 'sh', image, '-c', script, 'zomb', ...args,
+  ];
+}
+
+function inContainer(co: Checkout, args: string[], sandbox: NonNullable<Sandbox>, timeout = 600_000): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const name = `zomb-job-${randomBytes(6).toString('hex')}`;
+  // files beside the checkout (the traffic file) have the same place under /work
+  const inside = args.map((a) => (a.startsWith(`${co.root}/`) ? `${WORK}${a.slice(co.root.length)}` : a));
+  return new Promise((resolve, reject) => {
+    const docker = spawn('docker', sandboxArgs({ name, image: sandbox.image, network: sandbox.network, install: co.install, args: inside }), { stdio: ['pipe', 'pipe', 'pipe'] });
+    // COPYFILE_DISABLE: macOS tar would add a ._ file per file for its extended attributes, and the scan would count them
+    const tar = spawn('tar', ['-c', '-C', co.root, '.'], { stdio: ['ignore', 'pipe', 'ignore'], env: { PATH: process.env.PATH, COPYFILE_DISABLE: '1' } });
+    let failed: Error | null = null;
+    const fail = (e: Error) => ((failed ??= e), docker.kill());
+    tar.on('error', fail);
+    tar.on('close', (code) => code && fail(new Error(`could not pack the checkout (tar exited with ${code})`)));
+    tar.stdout.pipe(docker.stdin);
+    // the container may exit before it has read everything
+    docker.stdin.on('error', () => {});
+    let stdout = '';
+    let stderr = '';
+    docker.stdout.on('data', (c) => (stdout += c));
+    docker.stderr.on('data', (c) => (stderr += c));
+    // killing the docker CLI leaves the container running: remove it by name
+    const timer = setTimeout(() => {
+      failed ??= new Error(`the scan took longer than ${timeout / 60_000} minutes`);
+      execFile('docker', ['rm', '-f', name], () => {});
+    }, timeout);
+    docker.on('error', (e) => (clearTimeout(timer), tar.kill(), reject(failed ?? e)));
+    docker.on('close', (code) => (clearTimeout(timer), failed ? reject(failed) : resolve({ code, stdout, stderr })));
+  });
+}
 
 // zomb --json on the checkout; --fail-on exits 1 but still prints the result
-async function scan(co: { dir: string; run: (cmd: string, args: string[], timeout?: number) => Promise<{ stdout: string }> }, args: string[]): Promise<Result> {
+async function runScan(co: Checkout, args: string[], sandbox: Sandbox): Promise<Result> {
   let why = '';
-  const out = await co.run(process.execPath, [CLI, co.dir, '--json', ...args]).then((r) => r.stdout, (e: { stdout?: string; stderr?: string }) => ((why = e.stderr?.trim().split('\n').at(-1) || ''), e.stdout));
-  if (!out) throw new Error(why.replace(co.dir, 'the repo') || 'zomb produced no result');
+  let out: string | undefined;
+  if (sandbox) {
+    const r = await inContainer(co, args, sandbox);
+    out = r.stdout;
+    why = r.stderr.trim().split('\n').at(-1) || `docker exited with ${r.code}`;
+  } else {
+    if (co.install) await co.run(co.install[0], co.install.slice(1)).catch(() => {});
+    out = await co.run(process.execPath, [CLI, co.dir, '--json', ...args]).then((r) => r.stdout, (e: { stdout?: string; stderr?: string }) => ((why = e.stderr?.trim().split('\n').at(-1) || ''), e.stdout));
+  }
+  if (!out) throw new Error(why.replace(co.dir, 'the repo').replace(`${WORK}/repo`, 'the repo') || 'zomb produced no result');
   return JSON.parse(out);
 }
 
-export function jobs({ gh, db, appId, log = console.error, grants }: { gh: any; db: any; appId?: string | number; log?: (s: string) => void; grants?: Grants }) {
+export function jobs({ gh, db, appId, log = console.error, grants, sandbox = null }: { gh: any; db: any; appId?: string | number; log?: (s: string) => void; grants?: Grants; sandbox?: Sandbox }) {
+  const scan = (co: Checkout, args: string[]) => runScan(co, args, sandbox);
   const record = (repo: number | string, sha: string | null, kind: string, result: Result) =>
     db.prepare('INSERT INTO scans (repo, sha, kind, at, summary, failing, tasks) VALUES (?, ?, ?, ?, ?, ?, ?)').run(repo, sha, kind, new Date().toISOString(), JSON.stringify(result.summary), result.failing, result.tasks.length);
 

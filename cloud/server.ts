@@ -2,6 +2,7 @@
 // zomb Cloud: a GitHub App. Install it and every pull request gets a zomb check and comment (no workflow file),
 // every push to the default branch feeds the trends dashboard, and each repo gets a weekly clean-up issue
 // handed to the agent the team already uses. Self-host it, or use ours.
+import { execFile } from 'node:child_process';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -12,7 +13,8 @@ import { gunzipSync } from 'node:zlib';
 import { hitsOf } from '../src/traffic.ts';
 import { github, verify } from './github.ts';
 import { grants } from './grants.ts';
-import { assignCopilot, jobs, TRAFFIC_MIN_DAYS } from './jobs.ts';
+import { assignCopilot, jobs, sandboxFrom, TRAFFIC_MIN_DAYS } from './jobs.ts';
+import type { Sandbox } from './jobs.ts';
 import { vault } from './vault.ts';
 
 type Session = { id: string; login: string; token: string; installations: number[]; expires: number };
@@ -40,10 +42,12 @@ function config(env: Record<string, string | undefined> = process.env) {
     clientSecret: env.GITHUB_CLIENT_SECRET || saved.client_secret,
     api: env.GITHUB_API || 'https://api.github.com',
     web: env.GITHUB_WEB || 'https://github.com',
+    sandbox: sandboxFrom(env),
   };
 }
+type Config = Omit<ReturnType<typeof config>, 'sandbox'> & { sandbox?: Sandbox };
 
-export function start(cfg: ReturnType<typeof config> = config(), { log = console.error }: { log?: (s: string) => void } = {}) {
+export function start(cfg: Config = config(), { log = console.error }: { log?: (s: string) => void } = {}) {
   mkdirSync(cfg.data, { recursive: true });
   const db = new DatabaseSync(path.join(cfg.data, 'zomb.db'));
   db.exec(`CREATE TABLE IF NOT EXISTS repos (id INTEGER PRIMARY KEY, installation INTEGER NOT NULL, name TEXT NOT NULL, weekly_at TEXT);
@@ -60,7 +64,7 @@ export function start(cfg: ReturnType<typeof config> = config(), { log = console
   const gh = github(cfg);
   const secrets = vault(cfg.data);
   const tokens = grants({ db, vault: secrets, gh });
-  const work = jobs({ gh, db, appId: cfg.appId, log, grants: tokens });
+  const work = jobs({ gh, db, appId: cfg.appId, log, grants: tokens, sandbox: cfg.sandbox });
   const forget = (repo: number) => db.prepare('DELETE FROM traffic WHERE repo = ?').run(repo);
 
   // ponytail: in-memory queue, two jobs at a time; a restart drops queued jobs (the next push or week redoes them)
@@ -388,7 +392,7 @@ const page = (title: string, body: string) => `<!doctype html><html lang="en"><h
 .row{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:10px}
 </style></head><body><div class="solo"><div class="solo-in">${body}</div></div></body></html>`;
 
-function landing(cfg: ReturnType<typeof config>) {
+function landing(cfg: Config) {
   return page('zomb', `<p class="eyebrow">zomb cloud</p><h1>A health check on every pull request.</h1>
 <p>Trends across your repos, and a weekly clean-up handed to the agent your team already pays for.</p>
 <div class="row"><a class="btn btn-p" href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">Install on GitHub</a><a href="/login">Sign in</a></div>`);
@@ -513,7 +517,7 @@ export function field(yours: number | null, authors: Record<string, { deletedPer
     .join('')}</tbody></table>`;
 }
 
-function dashboard(db: any, me: Session, cfg: ReturnType<typeof config>, view = 'all') {
+function dashboard(db: any, me: Session, cfg: Config, view = 'all') {
   const repos = (db.prepare(`SELECT * FROM repos WHERE installation IN (${me.installations.map(() => '?').join(',') || 'NULL'}) ORDER BY name`).all(...me.installations) as any[]).map((r) => {
     const scans = (db.prepare("SELECT * FROM scans WHERE repo = ? AND kind != 'pr' ORDER BY id DESC LIMIT 12").all(r.id) as any[]).reverse().map((s) => ({ ...s, summary: JSON.parse(s.summary) }));
     return { ...r, scans, last: scans.at(-1)?.summary, prev: scans.at(-2)?.summary, at: scans.at(-1)?.at };
@@ -613,7 +617,7 @@ function trafficStats(db: any, repo: number) {
 }
 
 // One repo's settings: where its log drain posts, and whether its weekly issue goes to Copilot by itself.
-function settingsPage(cfg: ReturnType<typeof config>, repo: any, secret: string, stats: ReturnType<typeof trafficStats>, granted: boolean) {
+function settingsPage(cfg: Config, repo: any, secret: string, stats: ReturnType<typeof trafficStats>, granted: boolean) {
   const endpoint = `${cfg.url}/drain/${repo.id}`;
   const enough = stats.first !== null && Date.parse(stats.first) <= Date.now() - TRAFFIC_MIN_DAYS * 864e5;
   const status = stats.hits
@@ -646,7 +650,7 @@ ${copilot}
 }
 
 // Create the GitHub App from a manifest: one click on GitHub, and the credentials come back here.
-function setupPage(cfg: ReturnType<typeof config>, ready: boolean) {
+function setupPage(cfg: Config, ready: boolean) {
   if (ready) return page('Set up', '<h1>Already set up</h1><p><a href="/">Go to the dashboard</a></p>');
   const manifest = {
     name: 'zomb',
@@ -665,5 +669,8 @@ function setupPage(cfg: ReturnType<typeof config>, ready: boolean) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const cfg = config();
   const s = await start(cfg);
-  console.error(`zomb cloud on ${cfg.url} (port ${s.port})${cfg.appId ? '' : `: open ${cfg.url}/setup to create the GitHub App`}`);
+  console.error(`zomb cloud on ${cfg.url} (port ${s.port})${cfg.sandbox ? `, scans in Docker (${cfg.sandbox.image})` : ''}${cfg.appId ? '' : `: open ${cfg.url}/setup to create the GitHub App`}`);
+  // every scan would fail on a missing image: say so now, not on the first push
+  const image = cfg.sandbox?.image;
+  if (image) execFile('docker', ['image', 'inspect', image], (e, _, stderr) => e && console.error(`ZOMB_SANDBOX=docker, but scans cannot start: ${stderr.trim() || e.message}`));
 }

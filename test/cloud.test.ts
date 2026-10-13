@@ -274,6 +274,74 @@ test('a hand-off GitHub refuses puts the manual line back and asks for a new sig
   }
 });
 
+test('a sandboxed scan runs unprivileged, mounts nothing, and keeps its arguments out of the script', async () => {
+  const { sandboxArgs, sandboxFrom } = await import('../cloud/jobs.ts');
+  assert.equal(sandboxFrom({}), null, 'off unless asked for');
+  assert.deepEqual(sandboxFrom({ ZOMB_SANDBOX: 'docker', ZOMB_SANDBOX_NETWORK: 'scans' }), { image: 'zomb-cloud', network: 'scans' });
+  const args = sandboxArgs({ name: 'job', image: 'img', install: ['npm', 'ci', '--ignore-scripts'], args: ['--since', 'origin/x; rm -rf /'] });
+  const flag = (f: string) => args[args.indexOf(f) + 1];
+  assert.equal(flag('--user'), '1000:1000');
+  assert.equal(flag('--cap-drop'), 'ALL');
+  assert.equal(flag('--security-opt'), 'no-new-privileges');
+  assert.ok(args.includes('--rm') && !args.includes('--network'), 'thrown away after, on the default network unless one is set');
+  assert.ok(!args.some((a) => /^(-v|--volume|--mount|--privileged)$|docker\.sock/.test(a)), `no mounts: ${args.join(' ')}`);
+  const script = flag('-c');
+  assert.match(script, /npm ci --ignore-scripts/);
+  assert.doesNotMatch(script, /origin\/x/);
+  assert.deepEqual(args.slice(-3), ['zomb', '--since', 'origin/x; rm -rf /'], 'arguments arrive as "$@"');
+  const offline = sandboxArgs({ name: 'j', image: 'i', network: 'none', install: null, args: [] });
+  assert.equal(offline[offline.indexOf('--network') + 1], 'none');
+  assert.doesNotMatch(offline[offline.indexOf('-c') + 1], /--ignore-scripts/, 'no lockfile, no install');
+});
+
+const sandboxImage = process.env.ZOMB_SANDBOX_IMAGE || 'zomb-cloud';
+const noSandbox = (() => {
+  try {
+    execFileSync('docker', ['image', 'inspect', sandboxImage], { stdio: 'ignore' });
+    return false;
+  } catch {
+    return `needs Docker and the ${sandboxImage} image: docker build -f cloud/Dockerfile -t ${sandboxImage} .`;
+  }
+})();
+
+test('in the sandbox, a scan finds what it finds on the host, traffic included', { skip: noSandbox }, async () => {
+  const { jobs } = await import('../cloud/jobs.ts');
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(':memory:');
+  db.exec('CREATE TABLE repos (id INTEGER PRIMARY KEY, installation INTEGER, name TEXT, note TEXT); CREATE TABLE scans (id INTEGER PRIMARY KEY AUTOINCREMENT, repo INTEGER, sha TEXT, kind TEXT, at TEXT, summary TEXT, failing INTEGER, tasks INTEGER); CREATE TABLE traffic (repo INTEGER, day TEXT, path TEXT, hits INTEGER)');
+  const dir = mkdtempSync(path.join(tmpdir(), 'zomb-cloud-sandbox-'));
+  try {
+    const files = {
+      'package.json': JSON.stringify({ name: 'web', private: true, dependencies: { next: '15.0.0', react: '19.0.0' } }),
+      'app/page.tsx': 'export default function Home() { return <a href="/about">About</a>; }\n',
+      'app/about/page.tsx': 'export default function About() { return <p>about</p>; }\n',
+      'app/old/page.tsx': 'export default function Old() { return <p>old</p>; }\n',
+      'lib/unused.ts': 'export const nobody = 1;\n',
+    };
+    for (const [f, body] of Object.entries(files)) {
+      mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+      writeFileSync(path.join(dir, f), body);
+    }
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+    execFileSync('git', ['add', '-A'], { cwd: dir });
+    execFileSync('git', ['-c', 'user.name=D', '-c', 'user.email=d@e.com', 'commit', '-q', '-m', 'i'], { cwd: dir });
+    db.prepare("INSERT INTO repos (id, installation, name) VALUES (1, 1, 'o/web')").run();
+    const day = (ago: number) => new Date(Date.now() - ago * 864e5).toISOString().slice(0, 10);
+    db.prepare("INSERT INTO traffic VALUES (1, ?, '/', 4), (1, ?, '/about', 2)").run(day(20), day(2));
+    const api = async () => ({ clone_url: `file://${dir}`, default_branch: 'main' });
+    const gh = { as: () => api, installationToken: async () => '' };
+    const repo = db.prepare('SELECT * FROM repos').get();
+    await jobs({ gh, db, log: () => {} }).first(repo);
+    await jobs({ gh, db, log: () => {}, sandbox: { image: sandboxImage } }).first(repo);
+    const [host, boxed] = db.prepare('SELECT summary, tasks FROM scans ORDER BY id').all().map((r: any) => ({ ...r, summary: JSON.parse(r.summary) }));
+    assert.equal(boxed.summary.traffic?.requests, 6, 'the traffic file reached the container');
+    assert.ok(boxed.summary.zombie.files >= 1, 'the unused file is found');
+    assert.deepEqual(boxed, host);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the field places your repos among the study authors, biggest first', async () => {
   const { field } = await import('../cloud/server.ts');
   const authors = { Human: { deletedPer100: 33.07 }, Claude: { deletedPer100: 20.77 }, Devin: { deletedPer100: 36.6 } };
