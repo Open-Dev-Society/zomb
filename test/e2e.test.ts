@@ -26,6 +26,58 @@ const files = {
   'components/OldBanner.tsx': 'export function OldBanner() { return <div>old</div> }\n',
 };
 
+test('zomb --traffic: routes no request reached, with or without links', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'zomb-e2e-traffic-'));
+  try {
+    const app = {
+      'package.json': JSON.stringify({ name: 'site', private: true, dependencies: { next: '15.0.0', react: '19.0.0' } }),
+      'app/page.tsx': 'export default function Home() { return <main><a href="/pricing">Pricing</a><a href="/about">About</a><a href="/blog/hello">Blog</a></main>; }\n',
+      'app/pricing/page.tsx': 'export default function Pricing() { return <p>pricing</p>; }\n',
+      'app/about/page.tsx': 'export default function About() { return <p>about</p>; }\n',
+      'app/old-pricing/page.tsx': 'export default function OldPricing() { return <p>old</p>; }\n',
+      'app/blog/[slug]/page.tsx': 'export default function Post() { return <p>post</p>; }\n',
+      'app/api/export/route.ts': 'export async function GET() { return Response.json([]); }\n',
+    };
+    for (const [file, body] of Object.entries(app)) {
+      mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      writeFileSync(path.join(dir, file), body);
+    }
+    const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+    git('init', '-q');
+    git('add', '-A');
+    git('-c', 'user.name=Dev', '-c', 'user.email=dev@example.com', 'commit', '-q', '-m', 'init');
+    const log = path.join(dir, '..', `${path.basename(dir)}.log`);
+    writeFileSync(log, [
+      '1.2.3.4 - - [01/Sep/2026:10:00:00 +0000] "GET /pricing HTTP/1.1" 200 1 "-" "-"',
+      '1.2.3.4 - - [15/Sep/2026:10:00:00 +0000] "GET /blog/hello-world?ref=x HTTP/1.1" 200 1 "-" "-"',
+      '{"path":"/api/export","timestamp":"2026-10-01T00:00:00Z"}',
+    ].join('\n'));
+    const scan = (...args) => JSON.parse(execFileSync(process.execPath, [cli, dir, '--json', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+
+    // the route tasks only: "Is /x still used?" and "Delete /x: ..."
+    const routeTitles = (tasks) => tasks.map((t) => t.title).filter((t) => /^(Is|Delete) \/[^ ]*(?: still used\?|:)/.test(t));
+    const before = routeTitles(scan().tasks);
+    assert.deepEqual(before.sort(), ['Is /api/export still used?', 'Is /old-pricing still used?'], 'without traffic, unlinked routes are a guess');
+
+    const { summary, tasks } = scan('--traffic', log);
+    assert.deepEqual(routeTitles(tasks).sort(), ['Delete /old-pricing: no links and no traffic', 'Is /about still used? No traffic'], 'linked but unvisited is asked about; visited routes, dynamic ones included, are in use');
+    const dead = tasks.find((t) => t.title.startsWith('Delete /old-pricing'));
+    assert.equal(dead.action, 'delete-route');
+    assert.equal(dead.safe, false, 'deleting a route changes what users can reach: a person decides');
+    assert.match(dead.how, /from 2026-09-01 to 2026-10-01 \(3 requests\)/);
+    assert.deepEqual(summary.traffic, { requests: 3, from: '2026-09-01', to: '2026-10-01', days: 30, routes: 5, unvisited: 2 });
+    assert.equal(scan().summary.traffic, undefined, 'the JSON only changes when traffic is given');
+
+    const fails = (file) => assert.throws(() => execFileSync(process.execPath, [cli, dir, '--json', '--traffic', file], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), (e: any) => (assert.match(e.stderr, /--traffic/), true));
+    fails(path.join(dir, 'missing.log'));
+    writeFileSync(log, 'nothing here looks like a request\n');
+    fails(log);
+    rmSync(log);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('zomb --json finds every planted mistake', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'zomb-e2e-'));
   try {

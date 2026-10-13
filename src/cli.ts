@@ -6,7 +6,8 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { parseArgs, promisify } from 'node:util';
 import { isAgent, parseBlame, testsOnly, isTest, growth, versionSprawl, overlaps, sameNames, cycles, sharedFolders, namingStyles } from './score.ts';
-import { parseAll, dependents, touches, clones, orphanRoutes } from './signals.ts';
+import { parseAll, dependents, touches, clones, routeLinks } from './signals.ts';
+import { readTraffic, routeHits, summarize } from './traffic.ts';
 import { scanRepo, npmAudit, openRoute, hasAuthSignal, securityFindings } from './security.ts';
 import { renderReport } from './report.ts';
 import { toTasks, fingerprint, toMarkdown } from './tasks.ts';
@@ -36,6 +37,7 @@ try {
     markdown: { type: 'boolean', default: false },
     all: { type: 'boolean', default: false },
     since: { type: 'string' },
+    traffic: { type: 'string', multiple: true },
     'fail-on': { type: 'string' },
     'save-baseline': { type: 'boolean', default: false },
     'dry-run': { type: 'boolean', default: false },
@@ -67,6 +69,8 @@ const ZOMB_IGNORE = '*\n!baseline.json\n!blueprint.yml\n';
 const target = path.resolve(positionals[0] || '.');
 if (!existsSync(target)) fail(`${target} does not exist`);
 if (opts['fail-on'] && !LEVELS[opts['fail-on']]) fail(`--fail-on takes high, medium or low, not "${opts['fail-on']}"`);
+const trafficFiles = (opts.traffic || []).map((f) => path.resolve(f));
+for (const f of trafficFiles) if (!existsSync(f)) fail(`--traffic: ${f} does not exist`);
 const root = (await sh('git', ['rev-parse', '--show-toplevel'], target).catch(() => fail(`${target} is not inside a git repo`))).trim();
 
 async function knip() {
@@ -125,21 +129,22 @@ const all = [...new Set((await sh('git', ['ls-files', '--cached', '--others', '-
 const tracked = new Set((await sh('git', ['ls-files'], root)).split('\n').filter(Boolean));
 const files = all.filter((f) => CODE.test(f) && !/\.d\.[cm]?ts$/.test(f));
 if (!files.length) fail(`no JS/TS files tracked in ${root}`);
-const CHECKS: [string, string][] = [['imports', 'what nothing uses'], ['history', 'who wrote what'], ['code', `parse ${files.length} files`], ['copy-paste', 'repeated blocks'], ['routes', 'API routes and auth'], ['secrets', 'keys and .env files'], ['packages', 'npm audit']];
+const CHECKS: [string, string][] = [['imports', 'what nothing uses'], ['history', 'who wrote what'], ['code', `parse ${files.length} files`], ['copy-paste', 'repeated blocks'], ['routes', 'API routes and auth'], ['secrets', 'keys and .env files'], ['packages', 'npm audit'], ...(trafficFiles.length ? [['traffic', 'production requests'] as [string, string]] : [])];
 const spin = opts.json || opts.markdown ? { step() {}, stop() {} } : loader({ title: path.basename(root), label: `scanning ${files.length} files`, steps: CHECKS, color: !process.env.NO_COLOR });
 if (!process.stderr.isTTY) log(`scanning ${files.length} JS/TS files in ${root}`);
 const track = (name, p) => p.then((v) => (spin.step(name), v));
 
 const middleware = files.find((f) => /(^|\/)middleware\.[cm]?[jt]s$/.test(f));
-const [knipOut, { agentOf, history }, parsed, copies, orphans, scan, audit, middlewareSrc] = await Promise.all([
+const [knipOut, { agentOf, history }, parsed, copies, routes, scan, audit, middlewareSrc, traffic] = await Promise.all([
   track('imports', knip()),
   track('history', commits()),
   track('code', parseAll(root, files)),
   track('copy-paste', clones(root, files)),
-  track('routes', orphanRoutes(root, files)),
+  track('routes', routeLinks(root, files)),
   track('secrets', scanRepo(root, all, tracked)),
   track('packages', npmAudit(root)),
   middleware ? readFile(path.join(root, middleware), 'utf8') : '',
+  trafficFiles.length ? track('traffic', readTraffic(trafficFiles).catch((e) => (spin.stop(), fail(`--traffic: ${String(why(e).message).split('\n')[0]}`)))) : null,
 ]);
 
 // ---------- zombie code ----------
@@ -161,6 +166,8 @@ for (;;) {
 const zombieFiles = [...unused, ...onlyTests].filter((f) => !refs.get(f) && !live.has(f));
 spin.stop();
 if (knipOut.error) process.stderr.write(`${yellow('!')} Knip failed, so zombie detection is skipped: ${knipOut.error}\n`);
+// a file zomb can't read would make every route look unvisited
+if (traffic && !traffic.requests) fail(`--traffic: no requests found in ${trafficFiles.map((f) => path.relative(process.cwd(), f) || f).join(', ')}. zomb reads access logs, JSON lines and "/path count" lines.`);
 const byAgent = await authorship(zombieFiles, agentOf);
 const zombies = zombieFiles
   .map((f) => {
@@ -175,7 +182,13 @@ const deadExports = knipOut.issues
   .filter((i) => !unused.has(i.file) && i.exports.length + i.types.length)
   .map((i) => ({ file: i.file, names: [...i.exports, ...i.types].map((e) => e.name) }))
   .sort((a, b) => b.names.length - a.names.length);
-const maybe = [...orphans].map(([file, url]) => ({ file, url, lines: parsed.get(file).lines }));
+// Without traffic, a route nothing links to is a guess. With it, a route no request reached is the finding,
+// and the links only say how sure: API-only repos and linked pages count too.
+const routeList = [...routes].map(([file, r]) => ({ file, url: r.url, lines: parsed.get(file).lines, linked: r.linked }));
+const served = traffic && routeHits(routeList.map((r) => r.url), traffic);
+const maybe = served ? routeList.filter((r) => !served.get(r.url)) : routeList.filter((r) => r.linked === false).map(({ file, url, lines }) => ({ file, url, lines }));
+const trafficSummary = traffic && summarize(traffic, routeList.length, maybe.length);
+if (trafficSummary && trafficSummary.days !== null && trafficSummary.days < 7) process.stderr.write(`${yellow('!')} the traffic covers ${trafficSummary.days === 1 ? '1 day' : `${trafficSummary.days} days`}, so routes used weekly or monthly will look unused\n`);
 
 // ---------- security ----------
 const touchesOf = touches(parsed);
@@ -226,6 +239,7 @@ let data: ScanData = {
   blueprint: rules && { broken },
   // only in a whole-repo scan: a diff has no history to compare
   benchmark: opts.since ? null : benchmark(history, months),
+  traffic: trafficSummary,
 };
 // --since: report only what this change touched, plus the shortcuts it took
 if (opts.since) {
@@ -287,6 +301,7 @@ if (opts.json) {
     // the denominators a dashboard needs to show shares rather than raw counts
     lines: data.lines,
     deletedPer100: data.benchmark?.deletedPer100 ?? null,
+    ...(data.traffic && { traffic: data.traffic }),
   };
   console.log(JSON.stringify({ repo: data.repo, commit: data.commit, since: data.since || null, baseline: Boolean(baseline), failing: failing.length, summary, tasks }, null, 2));
   done();

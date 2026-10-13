@@ -1,5 +1,6 @@
 // The terminal look for every zomb command. Fits the window: nothing wraps, long paths shorten from the left, numbers line up on the right.
 // One visual language: ⬢ marks zomb at work, ● ◐ ○ are high, medium and low, ☒ ▣ ☐ are done, running and next.
+import { span } from './traffic.ts';
 import type { Month, Rule, ScanData, Severity, Task } from './types.ts';
 
 const ANSI = /\x1b\[[0-9;]*m/g;
@@ -107,7 +108,10 @@ export function render(
     security: audit.skipped ? [`   ${dim(clip(`packages not checked: ${audit.skipped}`, W - 3))}`] : [],
     shortcuts: [],
     blueprint: [],
-    zombie: byAgent ? [`   ${dim(`${byAgent} of ${plural(z.files.length, 'dead file')} written by an AI agent`)}`] : [],
+    zombie: [
+      ...(byAgent ? [`   ${dim(`${byAgent} of ${plural(z.files.length, 'dead file')} written by an AI agent`)}`] : []),
+      ...(data.traffic ? [`   ${dim(clip(`traffic ${span(data.traffic)}: ${n(data.traffic.unvisited)} of ${plural(data.traffic.routes, 'route')} got none`, W - 3))}`] : []),
+    ],
     sprawl: added && !data.since ? [`   ${dim(clip(`+${n(added)} −${n(deleted)} lines in 3 months${data.benchmark ? '' : ` · ${Math.round((deleted / added) * 100)} deleted per 100 added`}`, W - 3))}`] : [],
     architecture: [...(a.shared.length > 1 ? wrap(dim('shared code in'), a.shared, 3) : []), ...(a.deep.length ? [`   ${dim(`${plural(a.deep.length, 'file')} with ../../../ imports`)}`] : [])],
   };
@@ -252,7 +256,7 @@ export function renderHelp({ width = 80, color = true, version = '' }: { width?:
   ];
   const flag = (f: string, what: string) => `${f.padEnd(18)}${dim(what)}`;
   const groups: [string, string[]][] = [
-    ['SCAN', [flag('--all', 'every finding'), flag('--since <ref>', 'only what changed'), flag('--json', 'to-do for an agent'), flag('--markdown', 'a PR comment'), flag('--out <file>', 'HTML report path'), flag('--save-baseline', 'accept today'), flag('--fail-on <level>', 'the CI gate')]],
+    ['SCAN', [flag('--all', 'every finding'), flag('--since <ref>', 'only what changed'), flag('--json', 'to-do for an agent'), flag('--markdown', 'a PR comment'), flag('--out <file>', 'HTML report path'), flag('--traffic <log>', 'routes nobody hits'), flag('--save-baseline', 'accept today'), flag('--fail-on <level>', 'the CI gate')]],
     ['FIX', [flag('--dry-run', 'show the plan only'), flag('--no-checks', 'skip the build gate')]],
     ['BLUEPRINT', [flag('--write', 'save the rules')]],
     ['ENV', [flag('NO_COLOR=1', 'plain output'), flag('ZOMB_GUARD=off', 'pause the guard')]],
