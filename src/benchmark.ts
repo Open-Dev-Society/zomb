@@ -1,11 +1,12 @@
 // How this repo compares with the 336 public repos measured in The State of AI Code.
 // Same arithmetic as the study, over the same window, so the two numbers are comparable.
-import { createRequire } from 'node:module';
+// imported rather than required, so tsc copies the file into dist/ for the published CLI
+import data from './baseline.json' with { type: 'json' };
 import type { Month } from './types.ts';
 
 type Author = { deletedPer100: number; medianCommit: number; addedShare: number };
 type Baseline = { study: { repos: number; commits: number; lines: number; since: string; url: string }; authors: Record<string, Author> };
-const baseline: Baseline = createRequire(import.meta.url)('./baseline.json');
+const baseline: Baseline = data;
 
 export type Benchmark = {
   study: Baseline['study'];

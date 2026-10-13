@@ -25,6 +25,11 @@ const paint = (tty) => ui({ width: process.stdout.columns || 80, color: Boolean(
 const { dim, red, yellow, green } = paint(process.stderr.isTTY);
 const log = (msg) => process.stderr.write(`${dim('zomb')} ${msg}\n`);
 const fail = (msg) => (process.stderr.write(`${red('✗')} ${msg}\n`), process.exit(1));
+// process.exit drops what a pipe hasn't taken yet, and pipes are asynchronous on macOS: `zomb --json | jq` got the first 64 KB
+const exit = async (code: number): Promise<never> => {
+  await new Promise((resolve) => process.stdout.write('', resolve));
+  process.exit(code);
+};
 
 let args;
 try {
@@ -52,7 +57,7 @@ const { values: opts, positionals } = args;
 if (opts.help) {
   const { version } = createRequire(import.meta.url)('../package.json');
   console.log(renderHelp({ width: process.stdout.columns || 80, color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR, version }));
-  process.exit(0);
+  await exit(0);
 }
 // `zomb fix [path]` does the safe clean-up, `zomb blueprint [path]` proposes rules, `zomb show <n> [path]` explains one finding; plain `zomb [path]` reports
 const command = ['fix', 'blueprint', 'show'].includes(positionals[0]) ? positionals.shift() : 'scan';
@@ -62,7 +67,7 @@ const LEVELS = { high: ['high'], medium: ['high', 'medium'], low: ['high', 'medi
 const exec = promisify(execFile);
 const sh = (cmd, args, cwd) => exec(cmd, args, { cwd, maxBuffer: 512 * 1024 * 1024 }).then((r) => r.stdout);
 const CODE = /\.[cm]?[jt]sx?$/;
-const OWN = [':!.zomb', ':!*zomb-report*.html'];
+const OWN = [':!.zomb', ':!*zomb-report*.html', ':(exclude,glob)**/node_modules/**'];
 // ignore everything in .zomb/ except the baseline and blueprint, which are meant to be committed
 const ZOMB_IGNORE = '*\n!baseline.json\n!blueprint.yml\n';
 
@@ -124,8 +129,9 @@ async function referencedBy(file) {
   return out.split('\n')[0] || null;
 }
 
-// what's on disk: committed files plus new ones that aren't gitignored (uncommitted work is still your code)
-const all = [...new Set((await sh('git', ['ls-files', '--cached', '--others', '--exclude-standard'], root)).split('\n').filter(Boolean))];
+// what's on disk: committed files plus new ones that aren't gitignored (uncommitted work is still your code);
+// node_modules never is, even in a repo that forgot to ignore it
+const all = [...new Set((await sh('git', ['ls-files', '--cached', '--others', '--exclude-standard'], root)).split('\n').filter((f) => f && !/(^|\/)node_modules\//.test(f)))];
 const tracked = new Set((await sh('git', ['ls-files'], root)).split('\n').filter(Boolean));
 const files = all.filter((f) => CODE.test(f) && !/\.d\.[cm]?ts$/.test(f));
 if (!files.length) fail(`no JS/TS files tracked in ${root}`);
@@ -254,7 +260,7 @@ if (command === 'show') {
   const t = tasks.find((x) => x.id === pick);
   if (!t) fail(tasks.length ? `there ${tasks.length === 1 ? 'is 1 finding' : `are ${tasks.length} findings`}: pick 1 to ${tasks.length}` : 'the scan found nothing to show');
   else console.log(renderTask(t, tasks.length, { repo: data.repo, width: process.stdout.columns || 80, color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR }));
-  process.exit(0);
+  await exit(0);
 }
 
 if (command === 'blueprint') {
@@ -264,14 +270,14 @@ if (command === 'blueprint') {
   const exists = existsSync(target);
   const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
   console.log(renderBlueprint(proposal, today, { repo: data.repo, width: process.stdout.columns || 80, color, exists, write: opts.write }));
-  if (!opts.write) process.exit(0);
+  if (!opts.write) await exit(0);
   if (exists) fail(`${BLUEPRINT} already exists. Edit it, or delete it and run zomb blueprint --write again.`);
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, toYaml(proposal, data.repo));
   await writeFile(path.join(root, '.zomb', '.gitignore'), ZOMB_IGNORE);
   process.exit(0);
 }
-if (command === 'fix') process.exit(await fix({ root, data, dryRun: opts['dry-run'], noChecks: opts['no-checks'], color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR, width: process.stdout.columns || 80 }));
+if (command === 'fix') await exit(await fix({ root, data, dryRun: opts['dry-run'], noChecks: opts['no-checks'], color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR, width: process.stdout.columns || 80 }));
 
 // Baseline: the findings you already have. With one saved, only new findings fail --fail-on.
 const baselinePath = path.join(root, '.zomb', 'baseline.json');
@@ -284,9 +290,9 @@ if (opts['save-baseline']) {
 const baseline = existsSync(baselinePath) ? new Set(JSON.parse(await readFile(baselinePath, 'utf8')).fingerprints) : null;
 if (baseline) for (const t of tasks) t.new = !baseline.has(fingerprint(t));
 const failing = opts['fail-on'] ? tasks.filter((t) => LEVELS[opts['fail-on']].includes(t.severity) && (!baseline || t.new)) : [];
-const done = () => {
+const done = async () => {
   if (failing.length) process.stderr.write(`${red('✗')} ${failing.length} ${baseline ? 'new ' : ''}finding${failing.length === 1 ? '' : 's'} at or above --fail-on ${opts['fail-on']}\n`);
-  process.exit(failing.length ? 1 : 0);
+  await exit(failing.length ? 1 : 0);
 };
 
 // --json: the to-do list for an AI agent (or CI). No HTML, nothing else on stdout.
@@ -304,12 +310,12 @@ if (opts.json) {
     ...(data.traffic && { traffic: data.traffic }),
   };
   console.log(JSON.stringify({ repo: data.repo, commit: data.commit, since: data.since || null, baseline: Boolean(baseline), failing: failing.length, summary, tasks }, null, 2));
-  done();
+  await done();
 }
 // --markdown: a PR comment or CI summary
 if (opts.markdown) {
   console.log(toMarkdown(tasks, { repo: data.repo, since: data.since, baseline }));
-  done();
+  await done();
 }
 
 // The report goes in .zomb/ (ignored by git) unless --out says otherwise; the baseline next to it is meant to be committed.
@@ -334,4 +340,4 @@ const lines = render(data, tasks, {
   baseline,
 });
 console.log(`\n${lines.join('\n')}\n`);
-process.exit(failing.length ? 1 : 0);
+await exit(failing.length ? 1 : 0);

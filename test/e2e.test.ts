@@ -78,6 +78,37 @@ test('zomb --traffic: routes no request reached, with or without links', () => {
   }
 });
 
+test('zomb --json: a big result arrives whole through a pipe, and an unignored node_modules is not the repo', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'zomb-e2e-pipe-'));
+  try {
+    const app = {
+      'package.json': JSON.stringify({ name: 'big', private: true }),
+      'index.ts': 'export const main = 1;\n',
+      // no .gitignore: installed code sits next to the repo's own
+      'node_modules/dep/package.json': JSON.stringify({ name: 'dep', main: 'index.js' }),
+      'node_modules/dep/index.js': "module.exports = (s) => eval(s); // see lib/old0\n",
+    };
+    for (let i = 0; i < 300; i++) app[`lib/old${i}.ts`] = `export const old${i} = ${i};\n`;
+    for (const [file, body] of Object.entries(app)) {
+      mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      writeFileSync(path.join(dir, file), body);
+    }
+    const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+    git('init', '-q');
+    git('add', 'package.json', 'index.ts', 'lib');
+    git('-c', 'user.name=Dev', '-c', 'user.email=dev@example.com', 'commit', '-q', '-m', 'init');
+
+    const out = execFileSync(process.execPath, [cli, dir, '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    assert.ok(out.length > 64 * 1024, `the output is big enough to outgrow a pipe's buffer (${out.length} bytes)`);
+    const { tasks } = JSON.parse(out);
+    assert.equal(tasks.filter((t) => t.action === 'delete-file').length, 300);
+    assert.ok(!JSON.stringify(tasks).includes('node_modules'), 'nothing found in node_modules');
+    assert.ok(tasks.some((t) => t.title.startsWith('Delete lib/old0.ts')), 'a mention inside node_modules does not keep a file alive');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('zomb --json finds every planted mistake', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'zomb-e2e-'));
   try {
