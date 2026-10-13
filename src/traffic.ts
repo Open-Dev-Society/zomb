@@ -79,18 +79,22 @@ export function readLine(line: string): Hit | null {
   return null;
 }
 
-/** Add what one file (or a webhook body) says to `into`. A file that is one JSON array is read whole. */
-export function addText(into: Traffic, text: string) {
+/** The requests in one file or webhook body: a JSON array, or one request per line. */
+export function hitsOf(text: string): Hit[] {
   const trimmed = text.trimStart();
   if (trimmed.startsWith('[')) {
     try {
-      for (const o of JSON.parse(trimmed)) add(into, fromObject(o));
-      return;
+      const list = JSON.parse(trimmed);
+      if (Array.isArray(list)) return list.map(fromObject).filter((h): h is Hit => h !== null);
     } catch {
-      // not one array after all: fall through to lines
+      // not one array after all: read it as lines
     }
   }
-  for (const line of text.split('\n')) add(into, readLine(line));
+  return text.split('\n').map(readLine).filter((h): h is Hit => h !== null);
+}
+
+export function addText(into: Traffic, text: string) {
+  for (const hit of hitsOf(text)) add(into, hit);
 }
 
 function add(into: Traffic, hit: Hit | null) {
