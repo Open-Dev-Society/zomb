@@ -7,6 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { start } from '../cloud/server.ts';
 
 const stripeKey = ['sk', 'live', 'Q7mZp2Lx9Rt4Vb8Nc1Hs6Kd3'].join('_');
@@ -35,6 +36,20 @@ function fakeGitHub(): Promise<{ server: any; calls: any[]; url: string }> {
     if (req.method === 'GET' && call.path === '/repos/o/r') return reply(200, { clone_url: server.cloneUrl, default_branch: 'main' });
     if (req.method === 'GET' && call.path === '/repos/o/site') return reply(200, { clone_url: server.siteUrl, default_branch: 'main' });
     if (req.method === 'GET' && call.path === '/repos/o/gone') return reply(200, { clone_url: 'https://gone.invalid/o/gone.git', default_branch: 'main' });
+    // a Next.js site whose weekly issue goes to Copilot
+    if (req.method === 'GET' && call.path === '/repos/o/web') return reply(200, { clone_url: server.webUrl, default_branch: 'main' });
+    if (req.method === 'GET' && call.path.startsWith('/repos/o/web/issues?')) return reply(200, []);
+    if (req.method === 'POST' && call.path === '/repos/o/web/issues') return reply(201, { number: 8, assignees: [] });
+    if (req.method === 'PATCH' && call.path === '/repos/o/web/issues/8') return reply(200, { number: 8, assignees: [] });
+    if (req.method === 'POST' && call.path === '/repos/o/web/issues/8/assignees') return reply(201, { number: 8 });
+    // sign-in: a code, then refresh tokens that work once each
+    if (req.method === 'POST' && call.path === '/login/oauth/access_token') {
+      if (call.body.code) return reply(200, { access_token: 'user-1', expires_in: 60, refresh_token: 'refresh-1', refresh_token_expires_in: 15897600 });
+      if (call.body.grant_type === 'refresh_token' && call.body.refresh_token === 'refresh-1') return reply(200, { access_token: 'user-2', expires_in: 28800, refresh_token: 'refresh-2', refresh_token_expires_in: 15897600 });
+      return reply(200, { error: 'bad_refresh_token', error_description: 'The refresh token passed is incorrect or expired.' });
+    }
+    if (req.method === 'GET' && call.path === '/user') return reply(200, { login: 'dev' });
+    if (req.method === 'GET' && call.path.startsWith('/user/installations')) return reply(200, { installations: [{ id: 1 }] });
     reply(404, { message: `unexpected ${req.method} ${call.path}` });
   });
   return new Promise((r) => server.listen(0, () => r({ server, calls, url: `http://localhost:${server.address().port}` })));
@@ -123,6 +138,206 @@ test('pull requests get a check and a comment; the weekly clean-up opens an issu
   } finally {
     await app?.close();
     gh.server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a log drain feeds the weekly scan, and the weekly issue goes to Copilot by itself', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'zomb-cloud-traffic-'));
+  const gh = await fakeGitHub();
+  let app: any;
+  try {
+    const work = path.join(dir, 'web');
+    const files = {
+      'package.json': JSON.stringify({ name: 'web', private: true, dependencies: { next: '15.0.0', react: '19.0.0' } }),
+      'app/page.tsx': 'export default function Home() { return <a href="/about">About</a>; }\n',
+      'app/about/page.tsx': 'export default function About() { return <p>about</p>; }\n',
+      'app/promo/page.tsx': 'export default function Promo() { return <p>promo</p>; }\n',
+      'app/old/page.tsx': 'export default function Old() { return <p>old</p>; }\n',
+      'app/blog/[slug]/page.tsx': 'export default function Post() { return <p>post</p>; }\n',
+      '.zomb/config.yml': 'handoff: copilot\n',
+    };
+    for (const [f, body] of Object.entries(files)) {
+      mkdirSync(path.dirname(path.join(work, f)), { recursive: true });
+      writeFileSync(path.join(work, f), body);
+    }
+    const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Dev', '-c', 'user.email=dev@example.com', ...args], { cwd, encoding: 'utf8' }).trim();
+    git(work, 'init', '-q', '-b', 'main');
+    git(work, 'add', '-A');
+    git(work, 'commit', '-q', '-m', 'init');
+    gh.server.webUrl = `file://${work}`;
+
+    const secret = 'shh';
+    app = await start({ data: path.join(dir, 'data'), url: 'http://localhost', port: 0, appId: '123', slug: 'zomb', privateKey, webhookSecret: secret, clientId: 'c', clientSecret: 's', api: gh.url, web: gh.url }, { log: () => {} });
+    const base = `http://localhost:${app.port}`;
+    const hook = (event, payload) => {
+      const body = JSON.stringify(payload);
+      return fetch(`${base}/webhook`, { method: 'POST', body, headers: { 'x-github-event': event, 'x-hub-signature-256': `sha256=${createHmac('sha256', secret).update(body).digest('hex')}` } });
+    };
+    await hook('installation', { action: 'created', installation: { id: 1 }, repositories: [{ id: 50, full_name: 'o/web' }] });
+    await app.idle();
+    app.db.prepare('INSERT INTO sessions (id, login, token, installations, expires) VALUES (?, ?, ?, ?, ?)').run('sess', 'dev', 'session-token', '[1]', Date.now() + 3600_000);
+    const as = (p: string, init: RequestInit = {}) => fetch(`${base}${p}`, { redirect: 'manual', ...init, headers: { cookie: 'zomb=sess', origin: 'http://localhost', ...(init.headers || {}) } });
+
+    // the settings page hands out the drain's endpoint and token
+    const settings = await (await as('/repos/50')).text();
+    assert.match(settings, /http:\/\/localhost\/drain\/50/);
+    const token = settings.match(/Bearer ([\w-]+)/)![1];
+    assert.equal((await fetch(`${base}/repos/50`, { redirect: 'manual' })).status, 302, 'signed-out visitors are sent to sign in');
+
+    // Vercel signs a JSON array; anything else sends the token, gzipped or not
+    const day = (ago: number) => Date.now() - ago * 864e5;
+    const vercel = Buffer.from(JSON.stringify([{ source: 'lambda', path: '/blog/hello', timestamp: day(20) }, { proxy: { path: '/_next/static/chunk.js' }, timestamp: day(20) }]));
+    const drain = (body: Buffer, headers: Record<string, string>) => fetch(`${base}/drain/50`, { method: 'POST', body, headers });
+    assert.equal((await drain(vercel, { 'x-vercel-signature': 'nope' })).status, 401, 'unsigned drains are refused');
+    const signed = await drain(vercel, { 'x-vercel-signature': createHmac('sha1', token).update(vercel).digest('hex') });
+    assert.deepEqual(await signed.json(), { requests: 1, dropped: 0 }, 'the static file is not a request for a route');
+    const lines = gzipSync(`${JSON.stringify({ path: '/about?ref=home', timestamp: day(3) })}\n${JSON.stringify({ path: '/promo', timestamp: day(1) })}\n`);
+    assert.equal((await drain(lines, { authorization: `Bearer ${token}`, 'content-encoding': 'gzip' })).status, 200);
+    const rows = app.db.prepare('SELECT path, hits FROM traffic WHERE repo = 50 ORDER BY path').all().map((r) => `${r.path} ${r.hits}`);
+    assert.deepEqual(rows, ['/about 1', '/blog/hello 1', '/promo 1'], 'paths and counts only, static files skipped');
+    assert.equal((await drain(Buffer.from('/x'), { authorization: 'Bearer x' })).status, 401);
+    assert.equal((await fetch(`${base}/drain/999`, { method: 'POST', body: '/x', headers: { authorization: `Bearer ${token}` } })).status, 404);
+
+    // turning on automatic hand-off signs in again, and keeps that token sealed
+    const on = await as('/repos/50/copilot/auto', { method: 'POST', body: 'on=1', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+    assert.equal(on.status, 302);
+    assert.match(on.headers.get('location')!, /\/login\/oauth\/authorize\?client_id=c/);
+    const jar = on.headers.getSetCookie().map((c) => c.split(';')[0]);
+    const state = jar.find((c) => c.startsWith('zomb_state='))!.split('=')[1];
+    const back = await fetch(`${base}/callback?code=abc&state=${state}`, { redirect: 'manual', headers: { cookie: jar.join('; ') } });
+    assert.equal(back.headers.get('location'), '/repos/50');
+    assert.equal(app.db.prepare('SELECT copilot_login FROM repos WHERE id = 50').get().copilot_login, 'dev');
+    const grant = JSON.stringify(app.db.prepare('SELECT * FROM grants').all());
+    assert.ok(grant.includes('"dev"') && !grant.includes('user-1') && !grant.includes('refresh-1'), `tokens are sealed at rest: ${grant}`);
+    assert.match(await (await as('/')).text(), /Copilot, automatic/);
+
+    // the weekly issue: routes no request reached, then assigned to Copilot with a refreshed token
+    assert.equal(await app.weekly(50), 8);
+    const issue = gh.calls.find((c) => c.method === 'POST' && c.path === '/repos/o/web/issues');
+    assert.match(issue.body.body, /Delete \/old: no links and no traffic/);
+    assert.doesNotMatch(issue.body.body, /\/promo|\/about|\/blog/, 'routes with requests are in use, linked or not');
+    assert.match(issue.body.body, /assigns this issue to Copilot every week, on behalf of dev/);
+    const refresh = gh.calls.find((c) => c.path === '/login/oauth/access_token' && c.body.grant_type === 'refresh_token');
+    assert.equal(refresh?.body.refresh_token, 'refresh-1', 'the short-lived token is refreshed before use');
+    const assign = gh.calls.find((c) => c.method === 'POST' && c.path === '/repos/o/web/issues/8/assignees');
+    assert.equal(assign.auth, 'Bearer user-2', 'assigned as the person, with the fresh token');
+    assert.deepEqual(assign.body.assignees, ['copilot-swe-agent[bot]']);
+
+    // revoking zomb on GitHub stops the hand-off and says so
+    await hook('github_app_authorization', { action: 'revoked', sender: { login: 'dev' } });
+    assert.equal(app.db.prepare('SELECT count(*) AS n FROM grants').get().n, 0);
+    assert.match(await (await as('/')).text(), /Copilot stopped/);
+    assert.match(await (await as('/repos/50')).text(), /Stopped: dev revoked/);
+  } finally {
+    await app?.close();
+    gh.server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a hand-off GitHub refuses puts the manual line back and asks for a new sign-in', async () => {
+  const { jobs } = await import('../cloud/jobs.ts');
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(':memory:');
+  db.exec("CREATE TABLE repos (id INTEGER PRIMARY KEY, installation INTEGER, name TEXT, weekly_at TEXT, note TEXT, drain_secret TEXT, copilot_login TEXT, handoff_error TEXT); CREATE TABLE scans (id INTEGER PRIMARY KEY AUTOINCREMENT, repo INTEGER, sha TEXT, kind TEXT, at TEXT, summary TEXT, failing INTEGER, tasks INTEGER); CREATE TABLE traffic (repo INTEGER, day TEXT, path TEXT, hits INTEGER)");
+  const dir = mkdtempSync(path.join(tmpdir(), 'zomb-cloud-refused-'));
+  try {
+    mkdirSync(path.join(dir, 'src'));
+    writeFileSync(path.join(dir, 'package.json'), '{"name":"r","private":true}');
+    writeFileSync(path.join(dir, 'src/index.ts'), 'export const a = 1;\n');
+    writeFileSync(path.join(dir, 'src/old.ts'), 'export const b = 2;\n');
+    mkdirSync(path.join(dir, '.zomb'));
+    writeFileSync(path.join(dir, '.zomb/config.yml'), 'handoff: copilot\n');
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+    execFileSync('git', ['add', '-A'], { cwd: dir });
+    execFileSync('git', ['-c', 'user.name=D', '-c', 'user.email=d@e.com', 'commit', '-q', '-m', 'i'], { cwd: dir });
+    db.prepare("INSERT INTO repos (id, installation, name, copilot_login) VALUES (1, 1, 'o/r', 'dev')").run();
+    const calls: any[] = [];
+    const api = async (method: string, url: string, body?: any) => {
+      calls.push({ method, url, body });
+      if (url === '/repos/o/r') return { clone_url: `file://${dir}`, default_branch: 'main' };
+      if (url.startsWith('/repos/o/r/issues?')) return [];
+      return { number: 3, assignees: [] };
+    };
+    let dropped = '';
+    const grants: any = { has: () => true, drop: (l: string) => (dropped = l), token: async () => Promise.reject(Object.assign(new Error('bad'), { code: 'bad_refresh_token' })) };
+    const work = jobs({ gh: { as: () => api, user: () => api, installationToken: async () => '' }, db, grants, log: () => {} });
+    assert.equal(await work.weekly(db.prepare('SELECT * FROM repos').get()), 3);
+    const bodies = calls.filter((c) => c.body?.body).map((c) => c.body.body);
+    assert.match(bodies[0], /on behalf of dev/);
+    assert.match(bodies.at(-1), /Assign this issue to Copilot from the zomb dashboard/, 'the issue no longer claims it was handed over');
+    assert.equal(dropped, 'dev');
+    assert.match((db.prepare('SELECT handoff_error FROM repos').get() as any).handoff_error, /no longer accepts dev/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a sandboxed scan runs unprivileged, mounts nothing, and keeps its arguments out of the script', async () => {
+  const { sandboxArgs, sandboxFrom } = await import('../cloud/jobs.ts');
+  assert.equal(sandboxFrom({}), null, 'off unless asked for');
+  assert.deepEqual(sandboxFrom({ ZOMB_SANDBOX: 'docker', ZOMB_SANDBOX_NETWORK: 'scans' }), { image: 'zomb-cloud', network: 'scans' });
+  const args = sandboxArgs({ name: 'job', image: 'img', install: ['npm', 'ci', '--ignore-scripts'], args: ['--since', 'origin/x; rm -rf /'] });
+  const flag = (f: string) => args[args.indexOf(f) + 1];
+  assert.equal(flag('--user'), '1000:1000');
+  assert.equal(flag('--cap-drop'), 'ALL');
+  assert.equal(flag('--security-opt'), 'no-new-privileges');
+  assert.ok(args.includes('--rm') && !args.includes('--network'), 'thrown away after, on the default network unless one is set');
+  assert.ok(!args.some((a) => /^(-v|--volume|--mount|--privileged)$|docker\.sock/.test(a)), `no mounts: ${args.join(' ')}`);
+  const script = flag('-c');
+  assert.match(script, /npm ci --ignore-scripts/);
+  assert.doesNotMatch(script, /origin\/x/);
+  assert.deepEqual(args.slice(-3), ['zomb', '--since', 'origin/x; rm -rf /'], 'arguments arrive as "$@"');
+  const offline = sandboxArgs({ name: 'j', image: 'i', network: 'none', install: null, args: [] });
+  assert.equal(offline[offline.indexOf('--network') + 1], 'none');
+  assert.doesNotMatch(offline[offline.indexOf('-c') + 1], /--ignore-scripts/, 'no lockfile, no install');
+});
+
+const sandboxImage = process.env.ZOMB_SANDBOX_IMAGE || 'zomb-cloud';
+const noSandbox = (() => {
+  try {
+    execFileSync('docker', ['image', 'inspect', sandboxImage], { stdio: 'ignore' });
+    return false;
+  } catch {
+    return `needs Docker and the ${sandboxImage} image: docker build -f cloud/Dockerfile -t ${sandboxImage} .`;
+  }
+})();
+
+test('in the sandbox, a scan finds what it finds on the host, traffic included', { skip: noSandbox }, async () => {
+  const { jobs } = await import('../cloud/jobs.ts');
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(':memory:');
+  db.exec('CREATE TABLE repos (id INTEGER PRIMARY KEY, installation INTEGER, name TEXT, note TEXT); CREATE TABLE scans (id INTEGER PRIMARY KEY AUTOINCREMENT, repo INTEGER, sha TEXT, kind TEXT, at TEXT, summary TEXT, failing INTEGER, tasks INTEGER); CREATE TABLE traffic (repo INTEGER, day TEXT, path TEXT, hits INTEGER)');
+  const dir = mkdtempSync(path.join(tmpdir(), 'zomb-cloud-sandbox-'));
+  try {
+    const files = {
+      'package.json': JSON.stringify({ name: 'web', private: true, dependencies: { next: '15.0.0', react: '19.0.0' } }),
+      'app/page.tsx': 'export default function Home() { return <a href="/about">About</a>; }\n',
+      'app/about/page.tsx': 'export default function About() { return <p>about</p>; }\n',
+      'app/old/page.tsx': 'export default function Old() { return <p>old</p>; }\n',
+      'lib/unused.ts': 'export const nobody = 1;\n',
+    };
+    for (const [f, body] of Object.entries(files)) {
+      mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+      writeFileSync(path.join(dir, f), body);
+    }
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+    execFileSync('git', ['add', '-A'], { cwd: dir });
+    execFileSync('git', ['-c', 'user.name=D', '-c', 'user.email=d@e.com', 'commit', '-q', '-m', 'i'], { cwd: dir });
+    db.prepare("INSERT INTO repos (id, installation, name) VALUES (1, 1, 'o/web')").run();
+    const day = (ago: number) => new Date(Date.now() - ago * 864e5).toISOString().slice(0, 10);
+    db.prepare("INSERT INTO traffic VALUES (1, ?, '/', 4), (1, ?, '/about', 2)").run(day(20), day(2));
+    const api = async () => ({ clone_url: `file://${dir}`, default_branch: 'main' });
+    const gh = { as: () => api, installationToken: async () => '' };
+    const repo = db.prepare('SELECT * FROM repos').get();
+    await jobs({ gh, db, log: () => {} }).first(repo);
+    await jobs({ gh, db, log: () => {}, sandbox: { image: sandboxImage } }).first(repo);
+    const [host, boxed] = db.prepare('SELECT summary, tasks FROM scans ORDER BY id').all().map((r: any) => ({ ...r, summary: JSON.parse(r.summary) }));
+    assert.equal(boxed.summary.traffic?.requests, 6, 'the traffic file reached the container');
+    assert.ok(boxed.summary.zombie.files >= 1, 'the unused file is found');
+    assert.deepEqual(boxed, host);
+  } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });

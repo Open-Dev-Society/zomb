@@ -1,3 +1,4 @@
+import { span } from './traffic.ts';
 import type { Clone, Month, ScanData, Shortcut } from './types.ts';
 
 const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -25,14 +26,22 @@ function shortcutsSection(shortcuts: Shortcut[] | undefined) {
   ${shortcuts.length ? `<ul class="items">${shortcuts.map((c) => `<li><span class="sev ${c.severity}">${c.severity}</span><div><b>${esc(c.kind)}</b> ${code(c.line ? `${c.file}:${c.line}` : c.file)}</div></li>`).join('')}</ul>` : '<p>None found.</p>'}</section>`;
 }
 
-function zombieSection({ files, packages, exports, maybe }: ScanData['zombie'], knipError?: string) {
+function routesSection(maybe: ScanData['zombie']['maybe'], traffic: ScanData['traffic']) {
+  if (!traffic) {
+    return maybe.length ? `<h3>Maybe zombie <span class="muted">${maybe.length}</span></h3><p class="muted">Pages and API routes nothing in the repo links to or calls. Outside links or other services may still use them, so check your analytics before deleting.</p><ul class="items">${maybe.map((m) => `<li><div>${code(m.url)} <span class="muted">${esc(m.file)} · ${n(m.lines)} lines</span></div></li>`).join('')}</ul>` : '';
+  }
+  return `<h3>No traffic <span class="muted">${maybe.length} of ${plural(traffic.routes, 'route')}</span></h3><p class="muted">Pages and API routes no request reached ${esc(span(traffic))}. The ones marked "no links" aren't linked to or called from anywhere in the repo either.</p>
+  ${maybe.length ? `<ul class="items">${maybe.map((m) => `<li><div>${code(m.url)} <span class="muted">${esc(m.file)} · ${n(m.lines)} lines${m.linked === false ? ' · no links' : ''}</span></div></li>`).join('')}</ul>` : '<p>Every route got requests.</p>'}`;
+}
+
+function zombieSection({ files, packages, exports, maybe }: ScanData['zombie'], knipError: string | undefined, traffic: ScanData['traffic']) {
   if (knipError) return `<section id="zombie"><h2>Zombie code</h2><p class="note">Skipped: ${esc(knipError)}</p></section>`;
   const lines = files.reduce((s, f) => s + f.lines, 0);
   return `<section id="zombie"><h2>Zombie code</h2>
   <p>${files.length ? `${plural(files.length, 'file')} (${n(lines)} lines) sit in your codebase but aren't in use. Delete them and nothing breaks.` : 'Every file is in use.'}</p>
   ${files.length ? `<ul class="items">${files.slice(0, 50).map((f) => `<li><div>${code(f.path)} <span class="muted">${n(f.lines)} lines</span><p class="muted">${esc(f.why)}${f.share >= 0.5 ? `. ${Math.round(f.share * 100)}% written by ${esc(f.agents.join(', '))}` : ''}</p></div></li>`).join('')}</ul>${more(files.length, 50)}` : ''}
   ${packages.length ? `<h3>Unused packages <span class="muted">${packages.length}</span></h3><p class="muted">Installed but never imported. Every one is extra install time, bundle risk and attack surface.</p><p>${packages.map((p) => `${code(p.name)}${p.dev ? ' <span class="muted">dev</span>' : ''}`).join(' ')}</p>` : ''}
-  ${maybe.length ? `<h3>Maybe zombie <span class="muted">${maybe.length}</span></h3><p class="muted">Pages and API routes nothing in the repo links to or calls. Outside links or other services may still use them, so check your analytics before deleting.</p><ul class="items">${maybe.map((m) => `<li><div>${code(m.url)} <span class="muted">${esc(m.file)} · ${n(m.lines)} lines</span></div></li>`).join('')}</ul>` : ''}
+  ${routesSection(maybe, traffic)}
   ${exports.length ? `<h3>Dead code inside live files <span class="muted">${n(exports.reduce((s, e) => s + e.names.length, 0))} exports</span></h3><p class="muted">Functions, components and types that are exported but never imported anywhere.</p><ul class="items">${exports.slice(0, 15).map((e) => `<li><div>${code(e.file)}<p class="muted">${esc(e.names.slice(0, 8).join(', '))}${e.names.length > 8 ? ` and ${e.names.length - 8} more` : ''}</p></div></li>`).join('')}</ul>${more(exports.length, 15)}` : ''}
   </section>`;
 }
@@ -91,7 +100,7 @@ function benchmarkSection(bm: ScanData['benchmark']) {
   <p class="muted">Median commit here adds ${n(bm.medianCommit)} lines; a human commit in the study adds ${n(bm.humanMedianCommit)}.</p></section>`;
 }
 
-export function renderReport({ repo, commit, date, files, lines, knipError, zombie, security, sprawl, architecture, shortcuts, since, blueprint, benchmark }: ScanData): string {
+export function renderReport({ repo, commit, date, files, lines, knipError, zombie, security, sprawl, architecture, shortcuts, since, blueprint, benchmark, traffic }: ScanData): string {
   const high = security.findings.filter((f) => f.severity === 'high').length;
   const zLines = zombie.files.reduce((s, f) => s + f.lines, 0);
   const added = sprawl.recent.reduce((s, m) => s + m.added, 0);
@@ -126,7 +135,7 @@ ${card('architecture', n(architecture.cycles.length), 'import cycles', `${plural
 ${securitySection(security)}
 ${blueprintSection(blueprint)}
 ${shortcutsSection(shortcuts)}
-${zombieSection(zombie, knipError)}
+${zombieSection(zombie, knipError, traffic)}
 ${sprawlSection(sprawl)}
 ${benchmarkSection(benchmark)}
 ${architectureSection(architecture)}

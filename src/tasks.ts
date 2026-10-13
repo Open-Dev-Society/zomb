@@ -1,10 +1,11 @@
 // Findings -> one ordered to-do list that an AI agent (or a person) can work through.
 // `safe` = mechanical and checkable by a build: an agent may do it without asking. Everything else needs a human yes.
+import { span } from './traffic.ts';
 import type { ScanData, Severity, Task } from './types.ts';
 
 const plural = (k: number, word: string) => `${k} ${word}${k === 1 ? '' : 's'}`;
 
-export function toTasks({ security, zombie, sprawl, architecture, shortcuts = [], blueprint }: ScanData): Task[] {
+export function toTasks({ security, zombie, sprawl, architecture, shortcuts = [], blueprint, traffic }: ScanData): Task[] {
   const tasks: Task[] = [];
   const add = (t: Omit<Task, 'id'>) => tasks.push({ id: tasks.length + 1, ...t });
 
@@ -52,7 +53,15 @@ export function toTasks({ security, zombie, sprawl, architecture, shortcuts = []
   if (zombie.packages.length)
     add({ area: 'zombie', severity: 'low', action: 'uninstall', title: `Uninstall ${plural(zombie.packages.length, 'unused package')}`, where: zombie.packages.map((p) => p.name).join(' '), how: 'Nothing imports them. Remove them with your package manager, then run the build.', safe: true });
   for (const e of zombie.exports) add({ area: 'zombie', severity: 'low', action: 'remove-exports', title: `Remove ${plural(e.names.length, 'unused export')} from ${e.file}`, where: e.file, how: `Nothing imports ${e.names.join(', ')}. Delete them, or drop the export keyword if the file uses them itself.`, safe: true });
-  for (const m of zombie.maybe) add({ area: 'zombie', severity: 'low', action: 'review', title: `Is ${m.url} still used?`, where: m.file, how: 'Nothing in the repo links to or calls it. Ask the owner or check analytics before deleting.', safe: false });
+  for (const m of zombie.maybe) {
+    if (!traffic) {
+      add({ area: 'zombie', severity: 'low', action: 'review', title: `Is ${m.url} still used?`, where: m.file, how: 'Nothing in the repo links to or calls it. Ask the owner or check analytics before deleting.', safe: false });
+      continue;
+    }
+    const seen = `No request reached it ${span(traffic)}`;
+    if (m.linked === false) add({ area: 'zombie', severity: 'low', action: 'delete-route', title: `Delete ${m.url}: no links and no traffic`, where: m.file, how: `${seen}, and nothing in the repo links to or calls it. Delete the route and anything only it uses, then run the build and tests.`, safe: false });
+    else add({ area: 'zombie', severity: 'low', action: 'review', title: `Is ${m.url} still used? No traffic`, where: m.file, how: `${seen}${m.linked ? ', though the repo still links to it' : ''}. Check with whoever owns it before deleting${m.linked ? ', and remove the links with it' : ''}.`, safe: false });
+  }
 
   for (const o of sprawl.overlaps) {
     const [keep, ...rest] = o.libraries;

@@ -3,9 +3,9 @@
 // Finds public JS/TS repos with agent-written commits, measures every commit in them (agents and the humans
 // working in the same repos), and compares agents per 1,000 lines they added.
 //
-//   node research/state-of-ai-code.js find [--per-agent 60]   GitHub commit search -> research/data/repos.json
-//   node research/state-of-ai-code.js measure [--jobs 4]      clone, measure, delete (resumable) -> research/data/repos/
-//   node research/state-of-ai-code.js summary                 per-agent rates -> research/data/summary.json
+//   node research/state-of-ai-code.ts find [--per-agent 60]   GitHub commit search -> research/data/repos.json
+//   node research/state-of-ai-code.ts measure [--jobs 4]      clone, measure, delete (resumable) -> research/data/repos/
+//   node research/state-of-ai-code.ts summary                 per-agent rates -> research/data/summary.json
 //
 // Secrets are only counted, never stored. Needs the gh CLI, logged in.
 import { execFile, spawn } from 'node:child_process';
@@ -304,5 +304,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   if (step === 'find') await find(Number(values['per-agent']));
   else if (step === 'measure') await measureAll(Number(values.jobs));
   else if (step === 'summary') await summary();
-  else console.log('usage: node research/state-of-ai-code.js find | measure | summary');
+  else console.log('usage: node research/state-of-ai-code.ts find | measure | summary');
 }

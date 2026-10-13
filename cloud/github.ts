@@ -36,14 +36,21 @@ export function github({ appId, privateKey, clientId, clientSecret, api = 'https
     as: (installation: number | string): Api => async (method, url, body) => request(await installationToken(installation), method, url, body),
     user: (token: string): Api => (method, url, body) => request(token, method, url, body),
     loginUrl: (state: string, redirect: string) => `${web}/login/oauth/authorize?client_id=${encodeURIComponent(clientId || '')}&state=${state}&redirect_uri=${encodeURIComponent(redirect)}`,
-    async signIn(code: string) {
-      const res = await fetch(`${web}/login/oauth/access_token`, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }) });
-      const data = (await res.json()) as { access_token?: string; error_description?: string };
-      if (!data.access_token) throw new Error(data.error_description || 'GitHub sign-in failed');
-      return data.access_token;
-    },
+    signIn: (code: string) => userToken({ code }),
+    // user tokens of a GitHub App expire after 8 hours; the refresh token (6 months) gets a new pair, once
+    refresh: (refreshToken: string) => userToken({ grant_type: 'refresh_token', refresh_token: refreshToken }),
   };
+  async function userToken(grant: Record<string, string>): Promise<UserToken> {
+    const res = await fetch(`${web}/login/oauth/access_token`, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, ...grant }) });
+    const data = (await res.json()) as { access_token?: string; expires_in?: number; refresh_token?: string; refresh_token_expires_in?: number; error?: string; error_description?: string };
+    if (!data.access_token) throw Object.assign(new Error(data.error_description || 'GitHub sign-in failed'), { code: data.error });
+    const at = (s?: number) => (s ? Date.now() + s * 1000 : null);
+    return { token: data.access_token, expires: at(data.expires_in), refresh: data.refresh_token || null, refreshExpires: at(data.refresh_token_expires_in) };
+  }
 }
+
+/** A user's token. `expires` and the refresh token are null when the app's user tokens never expire. */
+export type UserToken = { token: string; expires: number | null; refresh: string | null; refreshExpires: number | null };
 
 // Webhooks are signed with the app's secret: anything else is someone pretending to be GitHub.
 export function verify(secret: string, body: Buffer | string, signature: string | string[] | undefined = '') {

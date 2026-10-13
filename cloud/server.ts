@@ -2,16 +2,28 @@
 // zomb Cloud: a GitHub App. Install it and every pull request gets a zomb check and comment (no workflow file),
 // every push to the default branch feeds the trends dashboard, and each repo gets a weekly clean-up issue
 // handed to the agent the team already uses. Self-host it, or use ours.
-import { randomBytes } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { gunzipSync } from 'node:zlib';
+import { hitsOf } from '../src/traffic.ts';
 import { github, verify } from './github.ts';
-import { jobs } from './jobs.ts';
+import { grants } from './grants.ts';
+import { assignCopilot, jobs, sandboxFrom, TRAFFIC_MIN_DAYS } from './jobs.ts';
+import type { Sandbox } from './jobs.ts';
+import { vault } from './vault.ts';
 
 type Session = { id: string; login: string; token: string; installations: number[]; expires: number };
+
+const KEEP_DAYS = 90;
+const MAX_BODY = 5 * 1024 * 1024;
+const MAX_PATHS = 10_000; // distinct paths per repo per day
+// files, not routes: a scan never asks about them, so they are not worth a row
+const STATIC = /^\/(_next|_vercel|static|assets)\/|\/[^/]+\.[a-z0-9]{1,8}$/i;
 
 function config(env: Record<string, string | undefined> = process.env) {
   const data = env.DATA_DIR || path.join(import.meta.dirname, 'data');
@@ -30,21 +42,30 @@ function config(env: Record<string, string | undefined> = process.env) {
     clientSecret: env.GITHUB_CLIENT_SECRET || saved.client_secret,
     api: env.GITHUB_API || 'https://api.github.com',
     web: env.GITHUB_WEB || 'https://github.com',
+    sandbox: sandboxFrom(env),
   };
 }
+type Config = Omit<ReturnType<typeof config>, 'sandbox'> & { sandbox?: Sandbox };
 
-export function start(cfg: ReturnType<typeof config> = config(), { log = console.error }: { log?: (s: string) => void } = {}) {
+export function start(cfg: Config = config(), { log = console.error }: { log?: (s: string) => void } = {}) {
   mkdirSync(cfg.data, { recursive: true });
   const db = new DatabaseSync(path.join(cfg.data, 'zomb.db'));
   db.exec(`CREATE TABLE IF NOT EXISTS repos (id INTEGER PRIMARY KEY, installation INTEGER NOT NULL, name TEXT NOT NULL, weekly_at TEXT);
     CREATE TABLE IF NOT EXISTS scans (id INTEGER PRIMARY KEY AUTOINCREMENT, repo INTEGER NOT NULL, sha TEXT, kind TEXT, at TEXT, summary TEXT, failing INTEGER, tasks INTEGER);
     CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, login TEXT, token TEXT, installations TEXT, expires INTEGER);`);
-  // why a repo has no scan, when it never can have one (no JS/TS); added after the first release
-  if (!db.prepare("SELECT 1 FROM pragma_table_info('repos') WHERE name = 'note'").get()) db.exec('ALTER TABLE repos ADD COLUMN note TEXT');
+  // production traffic from log drains: a path and a daily count, nothing about who asked
+  db.exec('CREATE TABLE IF NOT EXISTS traffic (repo INTEGER NOT NULL, day TEXT NOT NULL, path TEXT NOT NULL, hits INTEGER NOT NULL, PRIMARY KEY (repo, day, path))');
+  // added after the first release. note: why a repo has no scan, when it never can have one (no JS/TS);
+  // drain_secret: the sealed token its log drain signs with; copilot_login: whose grant hands its weekly issue to Copilot
+  for (const col of ['note', 'drain_secret', 'copilot_login', 'handoff_error'])
+    if (!db.prepare("SELECT 1 FROM pragma_table_info('repos') WHERE name = ?").get(col)) db.exec(`ALTER TABLE repos ADD COLUMN ${col} TEXT`);
   // built either way: they only make closures, and `ready` gates every call that needs real credentials
   const ready = Boolean(cfg.appId && cfg.privateKey && cfg.webhookSecret);
   const gh = github(cfg);
-  const work = jobs({ gh, db, appId: cfg.appId, log });
+  const secrets = vault(cfg.data);
+  const tokens = grants({ db, vault: secrets, gh });
+  const work = jobs({ gh, db, appId: cfg.appId, log, grants: tokens, sandbox: cfg.sandbox });
+  const forget = (repo: number) => db.prepare('DELETE FROM traffic WHERE repo = ?').run(repo);
 
   // ponytail: in-memory queue, two jobs at a time; a restart drops queued jobs (the next push or week redoes them)
   const queue: [string, () => Promise<unknown>][] = [];
@@ -67,21 +88,28 @@ export function start(cfg: ReturnType<typeof config> = config(), { log = console
     }
   };
   function onEvent(event: string | string[] | undefined, p: any) {
-    if (event === 'installation' && p.action === 'deleted') db.prepare('DELETE FROM repos WHERE installation = ?').run(p.installation.id);
-    else if (event === 'installation' && p.repositories) addRepos(p.installation.id, p.repositories);
+    if (event === 'installation' && p.action === 'deleted') {
+      for (const r of db.prepare('SELECT id FROM repos WHERE installation = ?').all(p.installation.id) as any[]) forget(r.id);
+      db.prepare('DELETE FROM repos WHERE installation = ?').run(p.installation.id);
+    } else if (event === 'installation' && p.repositories) addRepos(p.installation.id, p.repositories);
     else if (event === 'installation_repositories') {
       addRepos(p.installation.id, p.repositories_added || []);
-      for (const r of p.repositories_removed || []) db.prepare('DELETE FROM repos WHERE id = ?').run(r.id);
+      for (const r of p.repositories_removed || []) forget(r.id), db.prepare('DELETE FROM repos WHERE id = ?').run(r.id);
+    } else if (event === 'github_app_authorization' && p.action === 'revoked') {
+      // someone revoked zomb on GitHub: their token is dead, so stop handing issues over in their name
+      tokens.drop(p.sender.login);
+      db.prepare('UPDATE repos SET handoff_error = ? WHERE copilot_login = ?').run(`${p.sender.login} revoked zomb's access`, p.sender.login);
     } else if (event === 'pull_request' && ['opened', 'synchronize', 'reopened', 'ready_for_review'].includes(p.action)) enqueue(`${p.repository.full_name}#${p.number}`, () => work.pullRequest(p));
     else if (event === 'push') enqueue(`${p.repository.full_name} push`, () => work.push(p));
   }
 
-  // every hour: repos whose weekly clean-up is due
-  const weeklyDue = () => {
+  // every hour: repos whose weekly clean-up is due, and traffic older than anything a scan reads
+  const hourly = () => {
     const due = db.prepare("SELECT * FROM repos WHERE weekly_at IS NULL OR datetime(weekly_at) < datetime('now', '-7 days')").all() as any[];
     for (const repo of due) enqueue(`${repo.name} weekly`, () => work.weekly(repo));
+    db.prepare(`DELETE FROM traffic WHERE day < date('now', '-${KEEP_DAYS} days')`).run();
   };
-  const timer = ready ? setInterval(weeklyDue, 3600_000) : undefined;
+  const timer = ready ? setInterval(hourly, 3600_000) : undefined;
   // repos installed before their first scan ran (or whose first scan a restart dropped) catch up on start
   // ponytail: a repo that fails for another reason (empty, no default branch) is retried on every start
   if (ready) for (const repo of db.prepare('SELECT * FROM repos WHERE note IS NULL AND id NOT IN (SELECT repo FROM scans)').all() as any[]) enqueue(`${repo.name} first scan`, () => work.first(repo));
@@ -94,7 +122,81 @@ export function start(cfg: ReturnType<typeof config> = config(), { log = console
     return s ? { ...s, installations: JSON.parse(s.installations) } : null;
   };
 
-  const send = (res: any, status: number, body: string, headers: Record<string, string> = {}) => (res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', ...headers }), res.end(body));
+  const send = (res: any, status: number, body: string, headers: Record<string, string | string[]> = {}) => (res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', ...headers }), res.end(body));
+  const json = (res: any, status: number, data: unknown) => send(res, status, JSON.stringify(data), { 'content-type': 'application/json' });
+
+  // ---------- traffic: a log drain posts requests, zomb keeps a path and a daily count per repo
+  const drainSecret = (repo: any): string => {
+    if (repo.drain_secret) return secrets.open(repo.drain_secret);
+    const secret = randomBytes(24).toString('base64url');
+    db.prepare('UPDATE repos SET drain_secret = ? WHERE id = ?').run(secrets.seal(secret), repo.id);
+    return secret;
+  };
+  const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  function drain(repo: any, raw: Buffer, headers: Record<string, any>) {
+    if (!repo?.drain_secret) return { status: 404, error: 'no drain for this repo: open its settings in zomb first' };
+    const secret = secrets.open(repo.drain_secret);
+    let text = raw;
+    try {
+      if (/gzip/i.test(headers['content-encoding'] || '')) text = gunzipSync(raw);
+    } catch {
+      return { status: 400, error: 'bad gzip body' };
+    }
+    // Vercel signs the body with HMAC-SHA1; anything else sends the token as a bearer
+    const bearer = String(headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const signature = String(headers['x-vercel-signature'] || '');
+    const signed = (b: Buffer) => createHmac('sha1', secret).update(b).digest('hex');
+    if (!(bearer && same(bearer, secret)) && !(signature && (same(signature, signed(raw)) || same(signature, signed(text))))) return { status: 401, error: 'bad token or signature' };
+    const today = new Date().toISOString().slice(0, 10);
+    const oldest = new Date(Date.now() - KEEP_DAYS * 864e5).toISOString().slice(0, 10);
+    const tally = new Map<string, number>();
+    let requests = 0;
+    for (const h of hitsOf(text.toString('utf8'))) {
+      if (!h.count || STATIC.test(h.path) || h.path.length > 512) continue;
+      const at = h.at !== null && Number.isFinite(h.at) && Math.abs(h.at) < 8.64e15 ? new Date(h.at).toISOString().slice(0, 10) : today;
+      const day = at > today ? today : at;
+      if (day < oldest) continue;
+      tally.set(`${day}\n${h.path}`, (tally.get(`${day}\n${h.path}`) || 0) + h.count);
+      requests += h.count;
+    }
+    const bump = db.prepare('UPDATE traffic SET hits = hits + ? WHERE repo = ? AND day = ? AND path = ?');
+    const insert = db.prepare('INSERT INTO traffic (repo, day, path, hits) VALUES (?, ?, ?, ?)');
+    const count = db.prepare('SELECT count(*) AS n FROM traffic WHERE repo = ? AND day = ?');
+    const paths = new Map<string, number>();
+    let dropped = 0;
+    db.exec('BEGIN');
+    try {
+      for (const [key, hits] of tally) {
+        const [day, p] = key.split('\n');
+        if (bump.run(hits, repo.id, day, p).changes) continue;
+        // a site with endless distinct URLs (search pages, ids in paths) must not fill the disk
+        const n = paths.get(day) ?? (count.get(repo.id, day) as any).n;
+        if (n >= MAX_PATHS) {
+          dropped++;
+          continue;
+        }
+        insert.run(repo.id, day, p, hits);
+        paths.set(day, n + 1);
+      }
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    return { status: 200, requests, dropped };
+  }
+
+  const bodyOf = async (req: AsyncIterable<Buffer>, limit: number): Promise<Buffer | null> => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const c of req) {
+      size += c.length;
+      if (size > limit) return null;
+      chunks.push(c);
+    }
+    return Buffer.concat(chunks);
+  };
+
   const server = createServer(async (req, res) => {
     const url = new URL(req.url || '/', cfg.url);
     try {
@@ -107,6 +209,13 @@ export function start(cfg: ReturnType<typeof config> = config(), { log = console
         return onEvent(req.headers['x-github-event'], JSON.parse(body.toString()));
       }
       if (url.pathname === '/health') return send(res, 200, 'ok', { 'content-type': 'text/plain' });
+      const drainFor = url.pathname.match(/^\/drain\/(\d+)$/);
+      if (drainFor && req.method === 'POST') {
+        const raw = await bodyOf(req, MAX_BODY);
+        if (!raw) return json(res, 413, { error: `bodies are capped at ${MAX_BODY / 1024 / 1024} MB: send smaller batches` });
+        const { status, ...out } = drain(db.prepare('SELECT * FROM repos WHERE id = ?').get(Number(drainFor[1])), raw, req.headers);
+        return json(res, status, out);
+      }
       if (url.pathname === '/setup') return send(res, 200, setupPage(cfg, ready));
       if (url.pathname === '/setup/done') {
         if (ready) return send(res, 400, 'Already set up.');
@@ -122,13 +231,21 @@ export function start(cfg: ReturnType<typeof config> = config(), { log = console
       }
       if (url.pathname === '/callback') {
         if (!url.searchParams.get('state') || url.searchParams.get('state') !== cookies(req).zomb_state) return send(res, 400, 'Sign-in expired. <a href="/login">Try again</a>.');
-        const token = await gh.signIn(url.searchParams.get('code') || '');
-        const user = gh.user(token);
+        const signedIn = await gh.signIn(url.searchParams.get('code') || '');
+        const user = gh.user(signedIn.token);
         const me = await user('GET', '/user');
         const { installations } = await user('GET', '/user/installations?per_page=100');
         const id = randomBytes(24).toString('hex');
-        db.prepare('INSERT INTO sessions (id, login, token, installations, expires) VALUES (?, ?, ?, ?, ?)').run(id, me.login, token, JSON.stringify(installations.map((i) => i.id)), Date.now() + 8 * 3600_000);
-        return send(res, 302, '', { location: '/', 'set-cookie': `zomb=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${secure}` });
+        db.prepare('INSERT INTO sessions (id, login, token, installations, expires) VALUES (?, ?, ?, ?, ?)').run(id, me.login, signedIn.token, JSON.stringify(installations.map((i) => i.id)), Date.now() + 8 * 3600_000);
+        const cookie = `zomb=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${secure}`;
+        // signing in to turn on automatic hand-off: keep this token, sealed, for the weekly job
+        const grantFor = db.prepare('SELECT * FROM repos WHERE id = ?').get(Number(cookies(req).zomb_grant || 0)) as any;
+        if (grantFor && installations.some((i) => i.id === grantFor.installation)) {
+          tokens.save(me.login, signedIn);
+          db.prepare('UPDATE repos SET copilot_login = ?, handoff_error = NULL WHERE id = ?').run(me.login, grantFor.id);
+          return send(res, 302, '', { location: `/repos/${grantFor.id}`, 'set-cookie': [cookie, 'zomb_grant=; Path=/; Max-Age=0'] });
+        }
+        return send(res, 302, '', { location: '/', 'set-cookie': cookie });
       }
       if (url.pathname === '/logout') {
         db.prepare('DELETE FROM sessions WHERE id = ?').run(cookies(req).zomb || '');
@@ -136,15 +253,41 @@ export function start(cfg: ReturnType<typeof config> = config(), { log = console
       }
       const me = session(req);
       if (url.pathname === '/') return send(res, 200, me ? dashboard(db, me, cfg, url.searchParams.get('view') || 'all') : landing(cfg));
-      // hand the weekly issue to Copilot: Copilot only takes assignments from a person's token, so this is a click, not a cron
-      const copilot = url.pathname.match(/^\/repos\/(\d+)\/copilot$/);
-      if (copilot && req.method === 'POST' && me && req.headers.origin === new URL(cfg.url).origin) {
-        const repo = db.prepare('SELECT * FROM repos WHERE id = ?').get(Number(copilot[1])) as any;
-        if (!repo || !me.installations.includes(repo.installation)) return send(res, 404, 'Not found');
-        const issue = (await gh.as(repo.installation)('GET', `/repos/${repo.name}/issues?state=open&per_page=100`)).find((i: any) => i.body?.startsWith('<!-- zomb-weekly -->'));
-        if (!issue) return send(res, 404, page('No issue', '<p>No open weekly clean-up issue yet. It is created on the next weekly run.</p>'));
-        await gh.user(me.token)('POST', `/repos/${repo.name}/issues/${issue.number}/assignees`, { assignees: ['copilot-swe-agent[bot]'], agent_assignment: { target_repo: repo.name } });
-        return send(res, 302, '', { location: '/' });
+
+      // ---------- one repo: its settings, and the forms on them
+      const at = url.pathname.match(/^\/repos\/(\d+)(\/[a-z/]+)?$/);
+      if (at) {
+        if (!me) return send(res, 302, '', { location: '/login' });
+        const repo = db.prepare('SELECT * FROM repos WHERE id = ?').get(Number(at[1])) as any;
+        if (!repo || !me.installations.includes(repo.installation)) return send(res, 404, page('Not found', '<p>Not found.</p>'));
+        const action = at[2] || '';
+        if (req.method === 'GET' && !action) return send(res, 200, settingsPage(cfg, repo, drainSecret(repo), trafficStats(db, repo.id), tokens.has(repo.copilot_login)));
+        // forms only from our own pages
+        if (req.method !== 'POST' || req.headers.origin !== new URL(cfg.url).origin) return send(res, 404, page('Not found', '<p>Not found.</p>'));
+        const back = { location: `/repos/${repo.id}` };
+        if (action === '/drain') {
+          db.prepare('UPDATE repos SET drain_secret = NULL WHERE id = ?').run(repo.id);
+          return send(res, 302, '', back);
+        }
+        if (action === '/copilot/auto') {
+          const form = new URLSearchParams(String((await bodyOf(req, 4096)) || ''));
+          if (form.get('on') === '1') {
+            // sign in again so the token zomb keeps is one the person handed over for this, not a session's
+            const state = randomBytes(16).toString('hex');
+            const short = `HttpOnly; SameSite=Lax; Path=/; Max-Age=600${secure}`;
+            return send(res, 302, '', { location: gh.loginUrl(state, `${cfg.url}/callback`), 'set-cookie': [`zomb_state=${state}; ${short}`, `zomb_grant=${repo.id}; ${short}`] });
+          }
+          db.prepare('UPDATE repos SET copilot_login = NULL, handoff_error = NULL WHERE id = ?').run(repo.id);
+          if (repo.copilot_login && !db.prepare('SELECT 1 FROM repos WHERE copilot_login = ?').get(repo.copilot_login)) tokens.drop(repo.copilot_login);
+          return send(res, 302, '', back);
+        }
+        // hand this week's issue to Copilot now, as the person clicking
+        if (action === '/copilot') {
+          const issue = (await gh.as(repo.installation)('GET', `/repos/${repo.name}/issues?state=open&per_page=100`)).find((i: any) => i.body?.startsWith('<!-- zomb-weekly -->'));
+          if (!issue) return send(res, 404, page('No issue', '<p>No open weekly clean-up issue yet. It is created on the next weekly run.</p>'));
+          await assignCopilot(gh.user(me.token), repo.name, issue.number);
+          return send(res, 302, '', { location: '/' });
+        }
       }
       send(res, 404, page('Not found', '<p>Not found.</p>'));
     } catch (e) {
@@ -249,7 +392,7 @@ const page = (title: string, body: string) => `<!doctype html><html lang="en"><h
 .row{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:10px}
 </style></head><body><div class="solo"><div class="solo-in">${body}</div></div></body></html>`;
 
-function landing(cfg: ReturnType<typeof config>) {
+function landing(cfg: Config) {
   return page('zomb', `<p class="eyebrow">zomb cloud</p><h1>A health check on every pull request.</h1>
 <p>Trends across your repos, and a weekly clean-up handed to the agent your team already pays for.</p>
 <div class="row"><a class="btn btn-p" href="${esc(cfg.web)}/apps/${esc(cfg.slug)}/installations/new">Install on GitHub</a><a href="/login">Sign in</a></div>`);
@@ -318,6 +461,9 @@ td .warn{color:var(--warn);font-weight:600}
 /* one quiet action per row: 24 bordered buttons shout louder than the data */
 .handoff{background:none;border:0;padding:0;font:500 13px/1 var(--sans);color:var(--mute);cursor:pointer;white-space:nowrap;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-2);transition:color .15s var(--ease)}
 .handoff:hover{color:var(--ink);text-decoration-color:currentColor}
+.auto{font:500 13px/1 var(--sans);color:var(--accent-ink);white-space:nowrap}
+.when a{text-decoration:underline;text-underline-offset:2px;text-decoration-color:var(--line-2)}
+.when a:hover{color:var(--ink)}
 .trend{display:inline-block;margin-left:9px;vertical-align:middle}
 .act{display:flex;justify-content:flex-end}
 
@@ -371,7 +517,7 @@ export function field(yours: number | null, authors: Record<string, { deletedPer
     .join('')}</tbody></table>`;
 }
 
-function dashboard(db: any, me: Session, cfg: ReturnType<typeof config>, view = 'all') {
+function dashboard(db: any, me: Session, cfg: Config, view = 'all') {
   const repos = (db.prepare(`SELECT * FROM repos WHERE installation IN (${me.installations.map(() => '?').join(',') || 'NULL'}) ORDER BY name`).all(...me.installations) as any[]).map((r) => {
     const scans = (db.prepare("SELECT * FROM scans WHERE repo = ? AND kind != 'pr' ORDER BY id DESC LIMIT 12").all(r.id) as any[]).reverse().map((s) => ({ ...s, summary: JSON.parse(s.summary) }));
     return { ...r, scans, last: scans.at(-1)?.summary, prev: scans.at(-2)?.summary, at: scans.at(-1)?.at };
@@ -428,9 +574,15 @@ ${fig(deletes === null ? '—' : num(deletes), 'Deleted per 100 added', deletes 
       const tick = !r.last ? 'transparent' : r.last.security.high ? 'var(--high)' : r.last.blueprint ? 'var(--warn)' : r.last.zombie.lines ? 'var(--line-2)' : 'var(--accent)';
       return `<tr><td class="gut"><span style="background:${tick}"></span></td>
 <td class="nm" title="${esc(r.name)}"><a class="repo" href="${esc(cfg.web)}/${esc(r.name)}">${esc(r.name)}</a>
-<span class="when">${r.at ? `scanned ${esc(String(r.at).slice(0, 10))}` : r.note ? 'not scanned' : 'not scanned yet'}${r.weekly_at ? ` · cleaned ${esc(String(r.weekly_at).slice(0, 10))}` : ''}</span></td>
+<span class="when">${r.at ? `scanned ${esc(String(r.at).slice(0, 10))}` : r.note ? 'not scanned' : 'not scanned yet'}${r.weekly_at ? ` · cleaned ${esc(String(r.weekly_at).slice(0, 10))}` : ''} · <a href="/repos/${r.id}">settings</a></span></td>
 ${!r.last ? `<td colspan="5" class="pending">${r.note ? `Nothing to scan: ${esc(r.note)}` : 'Not scanned yet'}</td>` : `${cell(r, (s) => s.security.high, { trend: true, tone: 'hit' })}${cell(r, (s) => s.zombie.lines, { trend: true })}${cell(r, (s) => s.zombie.packages)}${cell(r, (s) => s.architecture.cycles + s.architecture.bigFiles)}${cell(r, (s) => s.blueprint || 0, { tone: 'warn' })}`}
-<td><div class="act"><form method="post" action="/repos/${r.id}/copilot"><button class="handoff">Hand to Copilot</button></form></div></td></tr>`;
+<td><div class="act">${
+        r.handoff_error
+          ? `<a class="handoff" href="/repos/${r.id}">Copilot stopped</a>`
+          : r.copilot_login
+            ? '<span class="auto">Copilot, automatic</span>'
+            : `<form method="post" action="/repos/${r.id}/copilot"><button class="handoff">Hand to Copilot</button></form>`
+      }</div></td></tr>`;
     })
     .join('');
 
@@ -460,8 +612,45 @@ ${!r.last ? `<td colspan="5" class="pending">${r.note ? `Nothing to scan: ${esc(
 </body></html>`;
 }
 
+function trafficStats(db: any, repo: number) {
+  return db.prepare('SELECT min(day) AS first, count(DISTINCT day) AS days, coalesce(sum(hits), 0) AS hits FROM traffic WHERE repo = ?').get(repo) as { first: string | null; days: number; hits: number };
+}
+
+// One repo's settings: where its log drain posts, and whether its weekly issue goes to Copilot by itself.
+function settingsPage(cfg: Config, repo: any, secret: string, stats: ReturnType<typeof trafficStats>, granted: boolean) {
+  const endpoint = `${cfg.url}/drain/${repo.id}`;
+  const enough = stats.first !== null && Date.parse(stats.first) <= Date.now() - TRAFFIC_MIN_DAYS * 864e5;
+  const status = stats.hits
+    ? `${num(stats.hits)} requests over ${num(stats.days)} day${stats.days === 1 ? '' : 's'}, since ${esc(stats.first)}. ${enough ? 'Scans use the last 30 days.' : `Scans start using it once it covers ${TRAFFIC_MIN_DAYS} days.`}`
+    : 'Nothing received yet.';
+  const form = (on: boolean, label: string, tone: string) => `<form method="post" action="/repos/${repo.id}/copilot/auto"><input type="hidden" name="on" value="${on ? 1 : 0}"><button class="btn ${tone}">${label}</button></form>`;
+  const copilot =
+    repo.copilot_login && granted && !repo.handoff_error
+      ? `<p>Each weekly clean-up issue is assigned to Copilot automatically, as <b>${esc(repo.copilot_login)}</b>, while the repo's <code>.zomb/config.yml</code> says <code>handoff: copilot</code>.</p>${form(false, 'Turn off', 'btn-g')}`
+      : `${repo.handoff_error ? `<p class="warn">Stopped: ${esc(repo.handoff_error)}. Turn it on again to resume.</p>` : ''}<p>Copilot only takes an assignment from a person. Turn this on and zomb keeps your GitHub sign-in, encrypted, to assign each weekly clean-up issue to Copilot for you. It needs <code>handoff: copilot</code> in the repo's <code>.zomb/config.yml</code>. Turn it off on every repo and zomb deletes the sign-in.</p>${form(true, 'Hand issues to Copilot every week', 'btn-p')}`;
+  return page(
+    repo.name,
+    `<style>.solo-in h3{margin-top:22px}.solo-in code{font:12.5px/1.5 var(--mono);background:var(--sunk);padding:1px 6px;border-radius:6px;overflow-wrap:anywhere}
+.solo-in pre{margin:0;padding:12px 14px;background:var(--sunk);border-radius:var(--r-sm);white-space:pre-wrap;overflow-wrap:anywhere}.solo-in pre code{padding:0;background:none}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0}.kv dt{font:500 10.5px/2 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}.kv dd{margin:0}
+.warn{color:var(--warn)}.muted{color:var(--mute)}</style>
+<p class="eyebrow">repo settings</p><h1>${esc(repo.name)}</h1>
+<h3>Production traffic</h3>
+<p>Send zomb your production requests and each scan lists the routes nobody visits. It keeps only each path and a daily count, for ${KEEP_DAYS} days.</p>
+<p class="muted">${status}</p>
+<dl class="kv"><dt>Endpoint</dt><dd><code>${esc(endpoint)}</code></dd><dt>Token</dt><dd><code>${esc(secret)}</code></dd></dl>
+<p><b>Vercel:</b> add a Drain for logs with JSON delivery to the endpoint, and use the token as its signature secret.</p>
+<p><b>Anything else:</b> POST an access log, JSON lines or a JSON array, up to ${MAX_BODY / 1024 / 1024} MB at a time, with the token as a bearer:</p>
+<pre><code>curl -X POST ${esc(endpoint)} -H "Authorization: Bearer ${esc(secret)}" --data-binary @access.log</code></pre>
+<form method="post" action="/repos/${repo.id}/drain"><button class="btn btn-g">Make a new token</button></form>
+<h3>Copilot</h3>
+${copilot}
+<p><a href="/">Back to the dashboard</a></p>`,
+  );
+}
+
 // Create the GitHub App from a manifest: one click on GitHub, and the credentials come back here.
-function setupPage(cfg: ReturnType<typeof config>, ready: boolean) {
+function setupPage(cfg: Config, ready: boolean) {
   if (ready) return page('Set up', '<h1>Already set up</h1><p><a href="/">Go to the dashboard</a></p>');
   const manifest = {
     name: 'zomb',
@@ -480,5 +669,8 @@ function setupPage(cfg: ReturnType<typeof config>, ready: boolean) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const cfg = config();
   const s = await start(cfg);
-  console.error(`zomb cloud on ${cfg.url} (port ${s.port})${cfg.appId ? '' : `: open ${cfg.url}/setup to create the GitHub App`}`);
+  console.error(`zomb cloud on ${cfg.url} (port ${s.port})${cfg.sandbox ? `, scans in Docker (${cfg.sandbox.image})` : ''}${cfg.appId ? '' : `: open ${cfg.url}/setup to create the GitHub App`}`);
+  // every scan would fail on a missing image: say so now, not on the first push
+  const image = cfg.sandbox?.image;
+  if (image) execFile('docker', ['image', 'inspect', image], (e, _, stderr) => e && console.error(`ZOMB_SANDBOX=docker, but scans cannot start: ${stderr.trim() || e.message}`));
 }

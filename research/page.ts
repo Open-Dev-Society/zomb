@@ -1,5 +1,5 @@
 // The State of AI Code as one static page, rendered from research/data/summary.json.
-//   node research/page.js > research/data/state-of-ai-code.html
+//   node research/page.ts > research/data/state-of-ai-code.html
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 

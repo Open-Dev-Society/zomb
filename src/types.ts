@@ -56,7 +56,10 @@ export type ScanData = {
   knipError?: string;
   since?: string;
   shortcuts?: Shortcut[];
-  zombie: { files: ZombieFile[]; packages: { name: string; file: string; dev: boolean }[]; exports: { file: string; names: string[] }[]; maybe: { file: string; url: string; lines: number }[] };
+  /** `maybe`: routes nothing links to; with traffic, routes no request reached (`linked` says whether anything links to them) */
+  zombie: { files: ZombieFile[]; packages: { name: string; file: string; dev: boolean }[]; exports: { file: string; names: string[] }[]; maybe: { file: string; url: string; lines: number; linked?: boolean | null }[] };
+  /** set when the scan read production traffic (--traffic) */
+  traffic?: import('./traffic.ts').TrafficSummary | null;
   security: { findings: Finding[]; audit: Audit; middlewareAuth: boolean; middleware?: string; inTests: number };
   sprawl: { months: Month[]; recent: Month[]; dupes: Clone[] | null; names: { name: string; files: string[] }[]; versions: Version[]; overlaps: Overlap[] };
   architecture: { cycles: string[][]; big: { file: string; lines: number; dependents: number }[]; shared: string[]; deep: { file: string; count: number }[]; naming: [string, number][] };
