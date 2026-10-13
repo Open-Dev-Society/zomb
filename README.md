@@ -22,7 +22,7 @@ zomb --traffic access.log # the routes no production request reached
 
 ## Compared with 336 public repos
 
-Every whole-repo scan ends with how this repo compares against [The State of AI Code](research/): 52,688 commits in 336 public JS/TS repos since October 2025, measured the same way.
+Every whole-repo scan ends with how this repo compares against [The State of AI Code](https://open-dev-society.github.io/zomb/study/): 52,688 commits in 336 public JS/TS repos since October 2025, measured the same way.
 
 ```
 VS 336 PUBLIC REPOS ──────────────────────── agents wrote 100% of your new code
