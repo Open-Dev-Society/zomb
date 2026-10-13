@@ -37,10 +37,9 @@
     ],
     "entry": [
       "src/bin.ts",
-      "cloud/server.js",
-      "research/*.js",
-      "test/*.test.js",
-      "research/page.ts"
+      "cloud/server.ts",
+      "research/*.ts",
+      "test/*.test.ts"
     ]
   },
   "devDependencies": {
