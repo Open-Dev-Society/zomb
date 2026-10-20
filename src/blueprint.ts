@@ -8,7 +8,7 @@ import { truthy } from './types.ts';
 import type { BrokenRule, Parsed, Rule, RouteFacts, Rules } from './types.ts';
 
 export const FILE = '.zomb/blueprint.yml';
-// short names for the jobs in score.js, as they read in the YAML
+// short names for the jobs in score.ts, as they read in the YAML
 const JOBS: Record<string, string> = { 'icon sets': 'icons', 'date libraries': 'dates', 'HTTP clients': 'http', 'animation libraries': 'animation', 'state managers': 'state', 'form libraries': 'forms', 'validation libraries': 'validation', 'CSS-in-JS libraries': 'css', 'toast libraries': 'toasts', 'chart libraries': 'charts', 'UI kits': 'ui', 'markdown renderers': 'markdown', 'data-fetching libraries': 'fetching', ORMs: 'orm' };
 const HOOK = /(^|\/)use[A-Z]\w*\.[cm]?[jt]sx?$/;
 const SHARED = /^(utils?|libs?|helpers?|common|shared|core)$/i;

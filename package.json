@@ -1,7 +1,12 @@
 {
   "name": "zomb",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A health check for AI-written codebases: security holes, zombie code, sprawl and architecture.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Open-Dev-Society/zomb.git"
+  },
+  "homepage": "https://open-dev-society.github.io/zomb/",
   "type": "module",
   "bin": {
     "zomb": "dist/bin.js"
@@ -37,10 +42,9 @@
     ],
     "entry": [
       "src/bin.ts",
-      "cloud/server.js",
-      "research/*.js",
-      "test/*.test.js",
-      "research/page.ts"
+      "cloud/server.ts",
+      "research/*.ts",
+      "test/*.test.ts"
     ]
   },
   "devDependencies": {

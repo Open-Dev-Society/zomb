@@ -13,14 +13,16 @@ It prints a summary and writes a single HTML report to `.zomb/report.html` (git-
 
 ```bash
 zomb --all                # every finding in the terminal, not just the top 5
+zomb show 3               # finding 3 from the list in full: where, why, how to fix
 zomb --json               # an ordered to-do list for an AI agent or CI
 zomb --since main         # only what your branch changed, plus the shortcuts it took
 zomb --since HEAD         # only your uncommitted work
+zomb --traffic access.log # the routes no production request reached
 ```
 
 ## Compared with 336 public repos
 
-Every whole-repo scan ends with how this repo compares against [The State of AI Code](research/): 52,688 commits in 336 public JS/TS repos since October 2025, measured the same way.
+Every whole-repo scan ends with how this repo compares against [The State of AI Code](https://open-dev-society.github.io/zomb/study/): 52,688 commits in 336 public JS/TS repos since October 2025, measured the same way.
 
 ```
 VS 336 PUBLIC REPOS ──────────────────────── agents wrote 100% of your new code
@@ -95,6 +97,17 @@ It refuses to run on uncommitted work, and it never touches scripts you may run 
 
 With `--since`, zomb also reads the diff for the ways agents make checks pass without fixing anything: new `@ts-ignore` and `eslint-disable`, `.skip` and `.only` tests, deleted tests and assertions, branches on `NODE_ENV === 'test'`, `as any`, and empty `catch` blocks.
 
+## Dead routes, from real traffic
+
+Without traffic, a page or API route that nothing in the repo links to is only a guess, so zomb asks about it. Give it your production requests and it knows:
+
+```bash
+zomb --traffic access.log                               # nginx or Apache logs
+zomb --traffic drain.ndjson --traffic last-month.log.gz # several files, gzipped or not
+```
+
+It reads access logs, JSON lines or arrays (Vercel log drains, most log shippers, anything with a `path` or `url`), and plain `/path count` lines like an analytics export. Every route no request reached becomes a finding: "no links and no traffic" when nothing in the repo points to it either, "no traffic" when something still links to it. A dynamic route counts the requests it serves (`/blog/hello` keeps `/blog/[slug]` alive), and a locale prefix like `/fr/` is ignored. Only paths, counts and dates are read. Less than a week of traffic gets a warning, since a page used once a month would look dead. [zomb Cloud](cloud/README.md) collects the traffic for you from a log drain.
+
 ## Block new problems in CI
 
 Existing debt shouldn't fail every build. Save it once as a baseline, commit it, and only new findings fail:
@@ -155,7 +168,7 @@ Any other agent can follow [skills/zomb-guard/SKILL.md](skills/zomb-guard/SKILL.
 **Zombie code:** code that's in the codebase but not in use
 - Files nothing imports or names, and files only their own tests keep alive
 - Unused npm packages, and exports nothing imports
-- Pages and API routes nothing in the repo links to (listed as "maybe", check your analytics)
+- Pages and API routes nothing in the repo links to (listed as "maybe"), or, with `--traffic`, that no production request reached
 
 **Sprawl:** the codebase only grows
 - Lines added vs deleted each month

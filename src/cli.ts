@@ -6,11 +6,12 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { parseArgs, promisify } from 'node:util';
 import { isAgent, parseBlame, testsOnly, isTest, growth, versionSprawl, overlaps, sameNames, cycles, sharedFolders, namingStyles } from './score.ts';
-import { parseAll, dependents, touches, clones, orphanRoutes } from './signals.ts';
+import { parseAll, dependents, touches, clones, routeLinks } from './signals.ts';
+import { readTraffic, routeHits, summarize } from './traffic.ts';
 import { scanRepo, npmAudit, openRoute, hasAuthSignal, securityFindings } from './security.ts';
 import { renderReport } from './report.ts';
 import { toTasks, fingerprint, toMarkdown } from './tasks.ts';
-import { render, spinner, ui, renderBlueprint } from './terminal.ts';
+import { render, loader, ui, renderBlueprint, renderHelp, renderTask } from './terminal.ts';
 import { infer, toRules, breaks, toYaml, readBlueprint, FILE as BLUEPRINT } from './blueprint.ts';
 import { fix } from './fix.ts';
 import { benchmark } from './benchmark.ts';
@@ -21,9 +22,14 @@ const why = (e: unknown) => (e as { stderr?: string; message?: string }) || {};
 import { changesSince, scopeTo, shortcuts } from './diff.ts';
 
 const paint = (tty) => ui({ width: process.stdout.columns || 80, color: Boolean(tty) && !process.env.NO_COLOR });
-const { dim, red, yellow, green, cyan } = paint(process.stderr.isTTY);
+const { dim, red, yellow, green } = paint(process.stderr.isTTY);
 const log = (msg) => process.stderr.write(`${dim('zomb')} ${msg}\n`);
 const fail = (msg) => (process.stderr.write(`${red('✗')} ${msg}\n`), process.exit(1));
+// process.exit drops what a pipe hasn't taken yet, and pipes are asynchronous on macOS: `zomb --json | jq` got the first 64 KB
+const exit = async (code: number): Promise<never> => {
+  await new Promise((resolve) => process.stdout.write('', resolve));
+  process.exit(code);
+};
 
 let args;
 try {
@@ -36,6 +42,7 @@ try {
     markdown: { type: 'boolean', default: false },
     all: { type: 'boolean', default: false },
     since: { type: 'string' },
+    traffic: { type: 'string', multiple: true },
     'fail-on': { type: 'string' },
     'save-baseline': { type: 'boolean', default: false },
     'dry-run': { type: 'boolean', default: false },
@@ -48,45 +55,27 @@ try {
 }
 const { values: opts, positionals } = args;
 if (opts.help) {
-  const { bold, dim, cyan, rule } = paint(process.stdout.isTTY);
-  const cmd = (c, what) => `  ${cyan(c.padEnd(26))}${what}`;
-  console.log(`
-${bold('zomb')}  ${dim('a health check for codebases written with AI')}
-
-${rule('COMMANDS')}
-${cmd('zomb [path]', 'scan: security, zombie code, sprawl, architecture')}
-${cmd('zomb fix [path]', 'delete dead code on a branch, gated by your build')}
-${cmd('zomb blueprint [path]', 'infer the rules this code follows; --write saves them')}
-${cmd('zomb guard', 'Claude Code hook: blocks bad edits as they happen')}
-
-${rule('SCAN')}
-${cmd('--all', 'every finding, not just the top 5')}
-${cmd('--since <ref>', 'only what changed since a branch or commit')}
-${cmd('--json', 'an ordered to-do list for an agent or CI')}
-${cmd('--markdown', 'a pull request comment')}
-${cmd('--out <file>', 'where to write the HTML report')}
-${cmd('--save-baseline', 'accept today\'s findings; only new ones fail')}
-${cmd('--fail-on <level>', 'exit 1 on new high, medium or low findings')}
-
-${rule('FIX')}
-${cmd('--dry-run', 'show the plan, change nothing')}
-${cmd('--no-checks', 'skip the typecheck, lint, test and build gate')}
-`);
-  process.exit(0);
+  const { version } = createRequire(import.meta.url)('../package.json');
+  console.log(renderHelp({ width: process.stdout.columns || 80, color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR, version }));
+  await exit(0);
 }
-// `zomb fix [path]` does the safe clean-up, `zomb blueprint [path]` proposes rules; plain `zomb [path]` reports
-const command = ['fix', 'blueprint'].includes(positionals[0]) ? positionals.shift() : 'scan';
+// `zomb fix [path]` does the safe clean-up, `zomb blueprint [path]` proposes rules, `zomb show <n> [path]` explains one finding; plain `zomb [path]` reports
+const command = ['fix', 'blueprint', 'show'].includes(positionals[0]) ? positionals.shift() : 'scan';
+const pick = command === 'show' ? Number(positionals.shift()) : 0;
+if (command === 'show' && !(Number.isInteger(pick) && pick > 0)) fail(`zomb show takes a finding number from the scan, like ${green('zomb show 1')}`);
 const LEVELS = { high: ['high'], medium: ['high', 'medium'], low: ['high', 'medium', 'low'] };
 const exec = promisify(execFile);
 const sh = (cmd, args, cwd) => exec(cmd, args, { cwd, maxBuffer: 512 * 1024 * 1024 }).then((r) => r.stdout);
 const CODE = /\.[cm]?[jt]sx?$/;
-const OWN = [':!.zomb', ':!*zomb-report*.html'];
+const OWN = [':!.zomb', ':!*zomb-report*.html', ':(exclude,glob)**/node_modules/**'];
 // ignore everything in .zomb/ except the baseline and blueprint, which are meant to be committed
 const ZOMB_IGNORE = '*\n!baseline.json\n!blueprint.yml\n';
 
 const target = path.resolve(positionals[0] || '.');
 if (!existsSync(target)) fail(`${target} does not exist`);
 if (opts['fail-on'] && !LEVELS[opts['fail-on']]) fail(`--fail-on takes high, medium or low, not "${opts['fail-on']}"`);
+const trafficFiles = (opts.traffic || []).map((f) => path.resolve(f));
+for (const f of trafficFiles) if (!existsSync(f)) fail(`--traffic: ${f} does not exist`);
 const root = (await sh('git', ['rev-parse', '--show-toplevel'], target).catch(() => fail(`${target} is not inside a git repo`))).trim();
 
 async function knip() {
@@ -97,9 +86,8 @@ async function knip() {
     // A config Knip can't load (vitest.config.ts without vitest installed) hides entry points, so its partial output lies.
     const whyLine = `${why(e).stderr || why(e).message}`.split('\n').find((l) => l.startsWith('ERROR')) || String(why(e).message).split('\n')[0];
     const hint = existsSync(path.join(root, 'node_modules')) ? '' : ' Run npm install in the repo first: Knip needs dependencies to read config files.';
-    const error = `${whyLine.replace(/^ERROR:\s*/, '')}.${hint}`;
-    process.stderr.write(`${yellow('!')} Knip failed, so zombie detection is skipped: ${error}\n`);
-    return { issues: [], error };
+    // printed once the loader is gone: a line written while it redraws would be drawn over
+    return { issues: [], error: `${whyLine.replace(/^ERROR:\s*/, '')}.${hint}` };
   }
 }
 
@@ -141,25 +129,28 @@ async function referencedBy(file) {
   return out.split('\n')[0] || null;
 }
 
-// what's on disk: committed files plus new ones that aren't gitignored (uncommitted work is still your code)
-const all = [...new Set((await sh('git', ['ls-files', '--cached', '--others', '--exclude-standard'], root)).split('\n').filter(Boolean))];
+// what's on disk: committed files plus new ones that aren't gitignored (uncommitted work is still your code);
+// node_modules never is, even in a repo that forgot to ignore it
+const all = [...new Set((await sh('git', ['ls-files', '--cached', '--others', '--exclude-standard'], root)).split('\n').filter((f) => f && !/(^|\/)node_modules\//.test(f)))];
 const tracked = new Set((await sh('git', ['ls-files'], root)).split('\n').filter(Boolean));
 const files = all.filter((f) => CODE.test(f) && !/\.d\.[cm]?ts$/.test(f));
 if (!files.length) fail(`no JS/TS files tracked in ${root}`);
-const spin = opts.json || opts.markdown ? { step() {}, stop() {} } : spinner(`scanning ${files.length} files`);
+const CHECKS: [string, string][] = [['imports', 'what nothing uses'], ['history', 'who wrote what'], ['code', `parse ${files.length} files`], ['copy-paste', 'repeated blocks'], ['routes', 'API routes and auth'], ['secrets', 'keys and .env files'], ['packages', 'npm audit'], ...(trafficFiles.length ? [['traffic', 'production requests'] as [string, string]] : [])];
+const spin = opts.json || opts.markdown ? { step() {}, stop() {} } : loader({ title: path.basename(root), label: `scanning ${files.length} files`, steps: CHECKS, color: !process.env.NO_COLOR });
 if (!process.stderr.isTTY) log(`scanning ${files.length} JS/TS files in ${root}`);
 const track = (name, p) => p.then((v) => (spin.step(name), v));
 
 const middleware = files.find((f) => /(^|\/)middleware\.[cm]?[jt]s$/.test(f));
-const [knipOut, { agentOf, history }, parsed, copies, orphans, scan, audit, middlewareSrc] = await Promise.all([
+const [knipOut, { agentOf, history }, parsed, copies, routes, scan, audit, middlewareSrc, traffic] = await Promise.all([
   track('imports', knip()),
   track('history', commits()),
   track('code', parseAll(root, files)),
   track('copy-paste', clones(root, files)),
-  track('routes', orphanRoutes(root, files)),
+  track('routes', routeLinks(root, files)),
   track('secrets', scanRepo(root, all, tracked)),
   track('packages', npmAudit(root)),
   middleware ? readFile(path.join(root, middleware), 'utf8') : '',
+  trafficFiles.length ? track('traffic', readTraffic(trafficFiles).catch((e) => (spin.stop(), fail(`--traffic: ${String(why(e).message).split('\n')[0]}`)))) : null,
 ]);
 
 // ---------- zombie code ----------
@@ -180,6 +171,9 @@ for (;;) {
 }
 const zombieFiles = [...unused, ...onlyTests].filter((f) => !refs.get(f) && !live.has(f));
 spin.stop();
+if (knipOut.error) process.stderr.write(`${yellow('!')} Knip failed, so zombie detection is skipped: ${knipOut.error}\n`);
+// a file zomb can't read would make every route look unvisited
+if (traffic && !traffic.requests) fail(`--traffic: no requests found in ${trafficFiles.map((f) => path.relative(process.cwd(), f) || f).join(', ')}. zomb reads access logs, JSON lines and "/path count" lines.`);
 const byAgent = await authorship(zombieFiles, agentOf);
 const zombies = zombieFiles
   .map((f) => {
@@ -194,7 +188,13 @@ const deadExports = knipOut.issues
   .filter((i) => !unused.has(i.file) && i.exports.length + i.types.length)
   .map((i) => ({ file: i.file, names: [...i.exports, ...i.types].map((e) => e.name) }))
   .sort((a, b) => b.names.length - a.names.length);
-const maybe = [...orphans].map(([file, url]) => ({ file, url, lines: parsed.get(file).lines }));
+// Without traffic, a route nothing links to is a guess. With it, a route no request reached is the finding,
+// and the links only say how sure: API-only repos and linked pages count too.
+const routeList = [...routes].map(([file, r]) => ({ file, url: r.url, lines: parsed.get(file).lines, linked: r.linked }));
+const served = traffic && routeHits(routeList.map((r) => r.url), traffic);
+const maybe = served ? routeList.filter((r) => !served.get(r.url)) : routeList.filter((r) => r.linked === false).map(({ file, url, lines }) => ({ file, url, lines }));
+const trafficSummary = traffic && summarize(traffic, routeList.length, maybe.length);
+if (trafficSummary && trafficSummary.days !== null && trafficSummary.days < 7) process.stderr.write(`${yellow('!')} the traffic covers ${trafficSummary.days === 1 ? '1 day' : `${trafficSummary.days} days`}, so routes used weekly or monthly will look unused\n`);
 
 // ---------- security ----------
 const touchesOf = touches(parsed);
@@ -207,6 +207,9 @@ const security = securityFindings({ ...scan, dangerous, openRoutes, audit });
 // ---------- sprawl ----------
 const months = growth(history);
 const recent = months.filter((m) => Date.now() - Date.parse(`${m.month}-01`) < 92 * 864e5);
+// lines added per day (the author's own date), for the activity calendar
+const days = new Map<string, number>();
+for (const c of history) days.set(c.date.slice(0, 10), (days.get(c.date.slice(0, 10)) || 0) + c.files.reduce((s, f) => s + f.added, 0));
 const packages = new Map();
 for (const [file, p] of parsed) if (!isTest(file)) for (const pkg of p.packages) packages.set(pkg, [...(packages.get(pkg) || []), file]);
 const dupes = copies && copies.sort((x, y) => y.lines - x.lines);
@@ -242,6 +245,7 @@ let data: ScanData = {
   blueprint: rules && { broken },
   // only in a whole-repo scan: a diff has no history to compare
   benchmark: opts.since ? null : benchmark(history, months),
+  traffic: trafficSummary,
 };
 // --since: report only what this change touched, plus the shortcuts it took
 if (opts.since) {
@@ -251,6 +255,14 @@ if (opts.since) {
 }
 const tasks = toTasks(data);
 
+// `zomb show <n>`: the same numbers the scan prints
+if (command === 'show') {
+  const t = tasks.find((x) => x.id === pick);
+  if (!t) fail(tasks.length ? `there ${tasks.length === 1 ? 'is 1 finding' : `are ${tasks.length} findings`}: pick 1 to ${tasks.length}` : 'the scan found nothing to show');
+  else console.log(renderTask(t, tasks.length, { repo: data.repo, width: process.stdout.columns || 80, color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR }));
+  await exit(0);
+}
+
 if (command === 'blueprint') {
   const proposal = infer(parsed, { middlewareAuth });
   const today = [...parsed].filter(([f]) => !isTest(f)).flatMap(([file, p]) => breaks(toRules(proposal), { file, packages: p.packages, deep: p.deep, route: middlewareAuth ? null : p.route, lines: p.lines }).map((b) => ({ file, ...b })));
@@ -258,29 +270,29 @@ if (command === 'blueprint') {
   const exists = existsSync(target);
   const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
   console.log(renderBlueprint(proposal, today, { repo: data.repo, width: process.stdout.columns || 80, color, exists, write: opts.write }));
-  if (!opts.write) process.exit(0);
+  if (!opts.write) await exit(0);
   if (exists) fail(`${BLUEPRINT} already exists. Edit it, or delete it and run zomb blueprint --write again.`);
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, toYaml(proposal, data.repo));
   await writeFile(path.join(root, '.zomb', '.gitignore'), ZOMB_IGNORE);
   process.exit(0);
 }
-if (command === 'fix') process.exit(await fix({ root, data, dryRun: opts['dry-run'], noChecks: opts['no-checks'], color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR, width: process.stdout.columns || 80 }));
+if (command === 'fix') await exit(await fix({ root, data, dryRun: opts['dry-run'], noChecks: opts['no-checks'], color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR, width: process.stdout.columns || 80 }));
 
 // Baseline: the findings you already have. With one saved, only new findings fail --fail-on.
 const baselinePath = path.join(root, '.zomb', 'baseline.json');
 if (opts['save-baseline']) {
   await mkdir(path.dirname(baselinePath), { recursive: true });
   await writeFile(baselinePath, `${JSON.stringify({ version: 1, commit: data.commit, saved: data.date, fingerprints: [...new Set(tasks.map(fingerprint))].sort() }, null, 2)}\n`);
-  process.stderr.write(`${green('✓')} saved ${tasks.length} current findings to ${cyan('.zomb/baseline.json')}\n  ${dim('From now on only new ones fail --fail-on. Commit this file.')}\n`);
+  process.stderr.write(`${green('✓')} saved ${tasks.length} current findings to ${green('.zomb/baseline.json')}\n  ${dim('From now on only new ones fail --fail-on. Commit this file.')}\n`);
   process.exit(0);
 }
 const baseline = existsSync(baselinePath) ? new Set(JSON.parse(await readFile(baselinePath, 'utf8')).fingerprints) : null;
 if (baseline) for (const t of tasks) t.new = !baseline.has(fingerprint(t));
 const failing = opts['fail-on'] ? tasks.filter((t) => LEVELS[opts['fail-on']].includes(t.severity) && (!baseline || t.new)) : [];
-const done = () => {
+const done = async () => {
   if (failing.length) process.stderr.write(`${red('✗')} ${failing.length} ${baseline ? 'new ' : ''}finding${failing.length === 1 ? '' : 's'} at or above --fail-on ${opts['fail-on']}\n`);
-  process.exit(failing.length ? 1 : 0);
+  await exit(failing.length ? 1 : 0);
 };
 
 // --json: the to-do list for an AI agent (or CI). No HTML, nothing else on stdout.
@@ -295,14 +307,15 @@ if (opts.json) {
     // the denominators a dashboard needs to show shares rather than raw counts
     lines: data.lines,
     deletedPer100: data.benchmark?.deletedPer100 ?? null,
+    ...(data.traffic && { traffic: data.traffic }),
   };
   console.log(JSON.stringify({ repo: data.repo, commit: data.commit, since: data.since || null, baseline: Boolean(baseline), failing: failing.length, summary, tasks }, null, 2));
-  done();
+  await done();
 }
 // --markdown: a PR comment or CI summary
 if (opts.markdown) {
   console.log(toMarkdown(tasks, { repo: data.repo, since: data.since, baseline }));
-  done();
+  await done();
 }
 
 // The report goes in .zomb/ (ignored by git) unless --out says otherwise; the baseline next to it is meant to be committed.
@@ -320,10 +333,11 @@ const lines = render(data, tasks, {
   audit,
   knipError: knipOut.error,
   recent,
+  days,
   out: path.relative(process.cwd(), out) || out,
   failing,
   failOn: opts['fail-on'],
   baseline,
 });
 console.log(`\n${lines.join('\n')}\n`);
-process.exit(failing.length ? 1 : 0);
+await exit(failing.length ? 1 : 0);

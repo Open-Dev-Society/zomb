@@ -1,11 +1,11 @@
-# Publishes site/ to GitHub Pages. Needs the repo public (or a paid plan), and Pages
-# set to "GitHub Actions" in Settings once, so it is off until launch day.
+# Publishes site/ to GitHub Pages, with The State of AI Code at /study/. Pages must be set to
+# "GitHub Actions" in the repo's settings (once).
 name: site
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['site/**', '.github/workflows/site.yml']
+    paths: ['site/**', 'research/data/state-of-ai-code.html', '.github/workflows/site.yml']
 permissions:
   contents: read
   pages: write
@@ -20,9 +20,14 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/checkout@v7
+      # the study page is rendered from research/data/summary.json by research/page.ts, and committed
+      - run: |
+          mkdir -p _site/study
+          cp -R site/. _site/
+          cp research/data/state-of-ai-code.html _site/study/index.html
+      - uses: actions/upload-pages-artifact@v5
         with:
-          path: site
+          path: _site
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

@@ -98,21 +98,22 @@ export function touches(parsed: Map<string, Parsed>): Map<string, string[]> {
   return out;
 }
 
-// Page/API routes that nothing in the repo links to or calls -> Map(path -> url).
-// ponytail: static search for the URL's fixed prefix; production traffic (cloud) is the real answer
-export async function orphanRoutes(root: string, files: string[]): Promise<Map<string, string>> {
+// Every page/API route -> Map(path -> { url, linked }): whether anything in the repo links to or calls it.
+// `linked` is null for an API-only repo, where nothing inside is supposed to call its routes.
+// The static search for the URL's fixed prefix is a guess; production traffic (--traffic) is the real answer.
+export async function routeLinks(root: string, files: string[]): Promise<Map<string, { url: string; linked: boolean | null }>> {
   const out = new Map();
-  // A repo with no pages besides a home page is an API for other apps: nothing inside it is supposed to call its routes.
   const hasPages = files.some((f) => routeOf(f)?.kind === 'page');
   await Promise.all(
     files.map(async (file) => {
       const route = routeOf(file);
-      if (!route || (route.kind === 'api' && !hasPages)) return;
+      if (!route) return;
+      if (route.kind === 'api' && !hasPages) return out.set(file, { url: route.url, linked: null });
       const prefix = route.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       // a quote, backtick, ( or } right before the path; /, ?, #, a quote or line end right after
       const re = `["'\`(}]${prefix}([/?#"'\`]|$)`;
       const hits = await promisify(execFile)('git', ['grep', '-l', '--untracked', '-E', '-e', re, '--', '.', `:!${file}`, ':!.zomb', ':!*zomb-report*.html'], { cwd: root }).then((r) => r.stdout, () => '');
-      if (!hits.trim()) out.set(file, route.url);
+      out.set(file, { url: route.url, linked: Boolean(hits.trim()) });
     }),
   );
   return out;
